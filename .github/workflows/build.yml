@@ -1,0 +1,95 @@
+name: Build (macOS + Windows)
+
+# Build signé + notarisé de Vato Canvas à chaque push sur main/master.
+#   - macOS (Apple Silicon)  : .dmg signé Developer ID + notarisé Apple
+#   - Windows x64            : -setup.exe (NSIS) + .msi (non signés)
+# Les installeurs sont attachés au run en tant qu'artifacts téléchargeables.
+#
+# Secrets requis (mêmes noms que le repo vato-ide — voir scripts/setup-ci-secrets.sh) :
+#   APPLE_CERTIFICATE            base64 du certificat "Developer ID Application" (.p12)
+#   APPLE_CERTIFICATE_PASSWORD   mot de passe du .p12
+#   APPLE_SIGNING_IDENTITY       "Developer ID Application: Noah d'hondt (22NT733Y82)"
+#   APPLE_ID                     Apple ID (email du compte développeur)
+#   APPLE_PASSWORD               mot de passe app-specific (appleid.apple.com)
+#   APPLE_TEAM_ID                22NT733Y82
+# Sans ces secrets, le job macOS échoue à l'étape de signature ; le job Windows
+# reste vert (Windows n'est pas signé).
+
+on:
+  push:
+    branches: [main, master]
+    paths-ignore:
+      - "**/*.md"
+      - "memory/**"
+      - ".gitignore"
+  workflow_dispatch:
+
+# Annule un build en cours si un nouveau push arrive sur la même ref.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            label: macOS (Apple Silicon)
+          - os: windows-latest
+            label: Windows x64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          shared-key: build-${{ matrix.os }}
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build, sign & notarize (Tauri)
+        # tauri-action importe APPLE_CERTIFICATE dans un keychain temporaire,
+        # signe le .app/.dmg avec APPLE_SIGNING_IDENTITY, puis notarise via
+        # APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID. Sur Windows, ces variables
+        # sont volontairement vides (la notarisation ne concerne que macOS).
+        uses: tauri-apps/tauri-action@v0
+        env:
+          APPLE_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: vato-canvas-${{ matrix.os }}
+          path: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: ignore
+          retention-days: 14

@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Scripts shell et workflows CI : toujours LF (sinon le \r casse le shebang sur macOS/Linux)
+*.sh text eol=lf
+.github/workflows/*.yml text eol=lf
