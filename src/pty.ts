@@ -51,6 +51,16 @@ export function ptyIsAlive(id: string): Promise<boolean> {
   return invoke<boolean>("pty_is_alive", { id });
 }
 
+/**
+ * The PTY's rolling output backlog, or null if empty. Replayed into a freshly
+ * mounted xterm after a workspace switch so the pane shows its previous content
+ * immediately (a plain shell won't repaint on SIGWINCH like a TUI does).
+ */
+export async function ptyBacklog(id: string): Promise<Uint8Array | null> {
+  const b64 = await invoke<string | null>("pty_backlog", { id });
+  return b64 ? dec(b64) : null;
+}
+
 /** True if a CLI program resolves on PATH. */
 export function cliCheck(program: string): Promise<boolean> {
   return invoke<boolean>("cli_check", { program });

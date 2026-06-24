@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use agent_sessions::{agent_session_id, claude_session_exists};
 use base64::Engine;
-use pty::{pty_is_alive, pty_kill, pty_resize, pty_spawn, pty_write, PtyState};
+use pty::{pty_backlog, pty_is_alive, pty_kill, pty_resize, pty_spawn, pty_write, PtyState};
 use stt::{
     stt_download, stt_install_whisper, stt_paths, stt_status, stt_transcribe, stt_transcribe_openai,
 };
@@ -132,8 +132,48 @@ fn unique_stamp() -> u128 {
         .unwrap_or(0)
 }
 
+/// macOS/Linux apps launched from Finder/Launchpad inherit a bare login PATH
+/// (`/usr/bin:/bin:/usr/sbin:/sbin`), so user-installed CLIs (`claude`, `codex`,
+/// …) living in `~/.local/bin`, Homebrew, bun/npm globals, etc. are invisible to
+/// both `which::which` (the `cli_check` overlay) and the PTY spawn. Capture the
+/// real PATH from a login+interactive shell once at startup and install it into
+/// the process environment so every later `which` and `CommandBuilder` sees it.
+/// Best-effort: on any failure we leave the inherited PATH untouched.
+#[cfg(not(windows))]
+fn hydrate_path_from_login_shell() {
+    use std::process::{Command, Stdio};
+
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    // Markers isolate PATH from any banner/prompt noise an interactive rc prints.
+    let script = r#"printf '__VATO_PATH_START__%s__VATO_PATH_END__' "$PATH""#;
+    let Ok(out) = Command::new(&shell)
+        .args(["-ilc", script])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+    else {
+        return;
+    };
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let Some(start) = stdout.find("__VATO_PATH_START__") else {
+        return;
+    };
+    let rest = &stdout[start + "__VATO_PATH_START__".len()..];
+    let Some(end) = rest.find("__VATO_PATH_END__") else {
+        return;
+    };
+    let path = rest[..end].trim();
+    if !path.is_empty() {
+        std::env::set_var("PATH", path);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Must run before any `which`/PTY work so the user's real PATH is in scope.
+    #[cfg(not(windows))]
+    hydrate_path_from_login_shell();
+
     let state = Arc::new(PtyState::default());
 
     tauri::Builder::default()
@@ -145,6 +185,7 @@ pub fn run() {
             pty_resize,
             pty_kill,
             pty_is_alive,
+            pty_backlog,
             cli_check,
             home_dir,
             list_dir,

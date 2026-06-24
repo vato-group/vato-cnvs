@@ -1,4 +1,4 @@
-import { useCanvasState } from "./canvasState";
+import { getPointerScene, useCanvasState } from "./canvasState";
 
 export interface Tile {
   x: number;
@@ -68,21 +68,126 @@ export function nearestSlotIndex(cx: number, cy: number, n: number): number {
   return best;
 }
 
-/**
- * A free, slightly-randomized spawn position for a new window, so it lands
- * "somewhere on screen" like a freshly drawn shape. Windows store SCENE coords
- * (they pan + zoom with the whiteboard), so we pick a random visible screen point
- * — accounting for the on-screen size being width*zoom — and convert it to scene
- * space via the live viewport.
- */
-export function randomSpawnRect(width: number, height: number): { x: number; y: number } {
+export interface SpawnBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Gap (scene px) kept between a freshly spawned window and its neighbours. */
+const SPAWN_GAP = 24;
+
+/** Do two boxes (inflated by `gap`) overlap? */
+function boxesOverlap(a: SpawnBox, b: SpawnBox, gap: number): boolean {
+  return (
+    a.x < b.x + b.width + gap &&
+    a.x + a.width + gap > b.x &&
+    a.y < b.y + b.height + gap &&
+    a.y + a.height + gap > b.y
+  );
+}
+
+/** Centre of the visible viewport in scene coords — the no-pointer fallback. */
+function viewportCentreScene(width: number, height: number): { x: number; y: number } {
   const { scrollX, scrollY, zoom } = useCanvasState.getState();
-  const margin = 48;
-  const spanX = Math.max(0, window.innerWidth - width * zoom - margin * 2);
-  const spanY = Math.max(0, window.innerHeight - height * zoom - margin * 2);
-  const screenX = margin + Math.random() * spanX;
-  const screenY = margin + Math.random() * spanY;
-  return { x: screenX / zoom - scrollX, y: screenY / zoom - scrollY };
+  return {
+    x: window.innerWidth / 2 / zoom - scrollX - width / 2,
+    y: window.innerHeight / 2 / zoom - scrollY - height / 2,
+  };
+}
+
+/**
+ * Pick where a new window should land. Windows store SCENE coords (they pan +
+ * zoom with the whiteboard), so everything here is in scene space.
+ *
+ * The goal ("se mettre à côté du truc le plus proche de ma souris sinon tout se
+ * rentre dedans"): instead of dropping the window at random — which piles them
+ * on top of each other — we anchor it to the window nearest the cursor and tuck
+ * it against whichever side faces the cursor, never overlapping a neighbour. If
+ * every side of the anchor is blocked we spiral outward on a step grid until a
+ * free slot is found. With no windows yet, we centre it on the cursor.
+ */
+export function spawnRectNear(width: number, height: number, existing: SpawnBox[]): { x: number; y: number } {
+  const mouse = getPointerScene();
+
+  // No pointer info yet → centre on the viewport.
+  if (!mouse) {
+    const c = viewportCentreScene(width, height);
+    if (!existing.length) return c;
+    return placeAround({ x: c.x + width / 2, y: c.y + height / 2 }, width, height, existing);
+  }
+
+  // First window of the workspace → drop it centred on the cursor.
+  if (!existing.length) return { x: mouse.x - width / 2, y: mouse.y - height / 2 };
+
+  return placeAround(mouse, width, height, existing);
+}
+
+/** Find a non-overlapping slot near `mouse`, anchored to the nearest window. */
+function placeAround(
+  mouse: { x: number; y: number },
+  width: number,
+  height: number,
+  existing: SpawnBox[],
+): { x: number; y: number } {
+  // Anchor = the window whose centre is nearest the cursor.
+  let anchor = existing[0];
+  let bestD = Infinity;
+  for (const w of existing) {
+    const dx = mouse.x - (w.x + w.width / 2);
+    const dy = mouse.y - (w.y + w.height / 2);
+    const d = dx * dx + dy * dy;
+    if (d < bestD) {
+      bestD = d;
+      anchor = w;
+    }
+  }
+
+  const gap = SPAWN_GAP;
+  const fits = (x: number, y: number) =>
+    !existing.some((w) => boxesOverlap({ x, y, width, height }, w, gap));
+  // Prefer the candidate whose centre is closest to the cursor.
+  const toMouse = (x: number, y: number) => {
+    const cx = x + width / 2 - mouse.x;
+    const cy = y + height / 2 - mouse.y;
+    return cx * cx + cy * cy;
+  };
+
+  // The four sides of the anchor, edge-aligned — sorted so the side facing the
+  // cursor wins.
+  const sides = [
+    { x: anchor.x + anchor.width + gap, y: anchor.y }, // right
+    { x: anchor.x, y: anchor.y + anchor.height + gap }, // below
+    { x: anchor.x - width - gap, y: anchor.y }, // left
+    { x: anchor.x, y: anchor.y - height - gap }, // above
+  ]
+    .filter((c) => fits(c.x, c.y))
+    .sort((a, b) => toMouse(a.x, a.y) - toMouse(b.x, b.y));
+  if (sides.length) return sides[0];
+
+  // Every side blocked → spiral outward on a step grid, taking the slot nearest
+  // the cursor in the first ring that has any free slot.
+  const stepX = width + gap;
+  const stepY = height + gap;
+  for (let ring = 1; ring <= 16; ring++) {
+    const ringFits: { x: number; y: number }[] = [];
+    for (let dy = -ring; dy <= ring; dy++) {
+      for (let dx = -ring; dx <= ring; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue; // ring border only
+        const x = anchor.x + dx * stepX;
+        const y = anchor.y + dy * stepY;
+        if (fits(x, y)) ringFits.push({ x, y });
+      }
+    }
+    if (ringFits.length) {
+      ringFits.sort((a, b) => toMouse(a.x, a.y) - toMouse(b.x, b.y));
+      return ringFits[0];
+    }
+  }
+
+  // Fully packed (very unlikely) → nudge off the anchor so it's at least visible.
+  return { x: anchor.x + gap, y: anchor.y + gap };
 }
 
 /** Move id to targetIndex within the given id order. */

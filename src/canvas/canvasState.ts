@@ -166,6 +166,21 @@ export function setCanvasContainer(el: HTMLElement | null) {
   canvasContainer = el;
 }
 
+// ---- Pointer tracking --------------------------------------------------------
+// Last seen pointer position (client coords). Used to spawn new windows next to
+// whatever is under the cursor instead of dropping them at random — see
+// spawnRectNear() in tiling.ts.
+let pointerClient: { x: number; y: number } | null = null;
+export function setPointerClient(x: number, y: number) {
+  pointerClient = { x, y };
+}
+/** Last pointer position in scene coords, or null if the pointer is unknown. */
+export function getPointerScene(): { x: number; y: number } | null {
+  if (!pointerClient) return null;
+  const rect = canvasContainer?.getBoundingClientRect();
+  return screenToScene(pointerClient.x - (rect?.left ?? 0), pointerClient.y - (rect?.top ?? 0));
+}
+
 /** Normalize a wheel delta (line mode -> approx pixels). */
 export function wheelDelta(d: number, mode: number) {
   return mode === 1 ? d * 16 : d;

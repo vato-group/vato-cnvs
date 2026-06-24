@@ -51,7 +51,7 @@ export function useTerminal(opts: UseTerminalOpts) {
       allowProposedApi: true,
       cursorBlink: true,
       fontFamily: '"Cascadia Code", "Cascadia Mono", Consolas, ui-monospace, monospace',
-      fontSize: 13,
+      fontSize: 11,
       lineHeight: 1.05,
       scrollback: 8000,
       theme: THEME,

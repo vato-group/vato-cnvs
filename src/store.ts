@@ -12,11 +12,16 @@ import type {
   Workspace,
 } from "./types";
 import { randomName } from "./data/names";
-import { computeTiles, randomSpawnRect } from "./canvas/tiling";
+import { computeTiles, spawnRectNear } from "./canvas/tiling";
 import { deleteSceneFiles } from "./canvas/sceneFiles";
+import { IS_MAC } from "./lib/platform";
 
-/** Default keyboard shortcuts (actionId -> combo, see canvas/shortcuts.ts). */
-export const DEFAULT_SHORTCUTS: Record<string, string> = {
+/**
+ * Base keyboard shortcuts (actionId -> combo, see canvas/shortcuts.ts).
+ * Written with the Windows/Linux convention (`ctrl` as primary modifier);
+ * `DEFAULT_SHORTCUTS` adapts them to macOS below.
+ */
+const BASE_SHORTCUTS: Record<string, string> = {
   "tool.selection": "v",
   "tool.hand": "h",
   "tool.rectangle": "r",
@@ -44,6 +49,26 @@ export const DEFAULT_SHORTCUTS: Record<string, string> = {
   "window.fullscreen": "f11",
   "settings.open": "ctrl+,",
 };
+
+/**
+ * Adapt a base combo to macOS: the primary modifier becomes Cmd (`meta`), and
+ * F11 (taken by Mission Control on macOS) maps to the standard Cmd+Shift+F.
+ * Modifiers are re-emitted in the canonical order produced by `comboFromEvent`
+ * (ctrl, alt, shift, meta) so the stored combo matches a live keystroke.
+ */
+const MOD_ORDER = ["ctrl", "alt", "shift", "meta"];
+function macCombo(actionId: string, combo: string): string {
+  const mapped = actionId === "window.fullscreen" ? "meta+shift+f" : combo.replace(/\bctrl\b/g, "meta");
+  const parts = mapped.split("+");
+  const mods = MOD_ORDER.filter((m) => parts.includes(m));
+  const keys = parts.filter((p) => !MOD_ORDER.includes(p));
+  return [...mods, ...keys].join("+");
+}
+
+/** Default keyboard shortcuts, adapted to the host platform. */
+export const DEFAULT_SHORTCUTS: Record<string, string> = IS_MAC
+  ? Object.fromEntries(Object.entries(BASE_SHORTCUTS).map(([id, c]) => [id, macCombo(id, c)]))
+  : BASE_SHORTCUTS;
 
 export const DEFAULT_STT: SttSettings = {
   engine: "whisper",
@@ -323,7 +348,7 @@ export const useStore = create<AppState>()(
             const used = new Set(w.windows.filter((x) => x.kind === "terminal").map((x) => x.title));
             const width = 600;
             const height = 440;
-            const pos = randomSpawnRect(width, height);
+            const pos = spawnRectNear(width, height, w.windows);
             const win: WindowItem = {
               id,
               kind: "terminal",
@@ -355,7 +380,7 @@ export const useStore = create<AppState>()(
           mapActive(s, (w) => {
             const width = 760;
             const height = 540;
-            const pos = randomSpawnRect(width, height);
+            const pos = spawnRectNear(width, height, w.windows);
             const win: WindowItem = {
               id,
               kind,
@@ -464,7 +489,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: "vato-cnvs",
-      version: 3,
+      version: 4,
       migrate: (persisted: any, version: number) => {
         // Pre-v2 shapes are incompatible — start fresh.
         if (!persisted || version < 2) {
@@ -475,12 +500,25 @@ export const useStore = create<AppState>()(
         // Old x/y came from the removed winPan/screen model, so reset each
         // workspace's viewport to 100% and re-tile its windows into valid scene
         // coords — preserving the windows themselves (terminals/sessions kept).
-        return {
-          ...persisted,
-          workspaces: (persisted.workspaces ?? []).map((w: any) =>
-            retile({ ...w, view: { scrollX: 0, scrollY: 0, zoom: 1 } }),
-          ),
-        };
+        let next = persisted;
+        if (version < 3) {
+          next = {
+            ...next,
+            workspaces: (next.workspaces ?? []).map((w: any) =>
+              retile({ ...w, view: { scrollX: 0, scrollY: 0, zoom: 1 } }),
+            ),
+          };
+        }
+        // v3 -> v4: shortcut defaults are now platform-aware (Cmd on macOS). The
+        // old Windows-style Ctrl bindings were persisted as if customized, so
+        // reset them once to the host platform's defaults.
+        if (version < 4) {
+          next = {
+            ...next,
+            settings: { ...(next.settings ?? {}), shortcuts: { ...DEFAULT_SHORTCUTS } },
+          };
+        }
+        return next;
       },
       // Never auto-respawn terminals on reload: strip live PTY state.
       partialize: (s) => ({

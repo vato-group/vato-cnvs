@@ -1,6 +1,6 @@
 import { useEffect, useReducer } from "react";
 import { useActiveWorkspace, useStore } from "../store";
-import { panCanvasBy, setFocusMode, useCanvasState, wheelDelta, zoomCanvasAtClient } from "./canvasState";
+import { panCanvasBy, setFocusMode, setPointerClient, useCanvasState, wheelDelta, zoomCanvasAtClient } from "./canvasState";
 import { useDrag } from "./dragState";
 import { computeTiles } from "./tiling";
 import { ExcalidrawCanvas } from "./ExcalidrawCanvas";
@@ -70,6 +70,15 @@ export function Canvas() {
     };
     window.addEventListener("wheel", onWheel, { capture: true, passive: false });
     return () => window.removeEventListener("wheel", onWheel, { capture: true } as EventListenerOptions);
+  }, []);
+
+  // Track the pointer so new windows spawned via shortcut can land next to
+  // whatever sits under the cursor instead of at a random spot (see
+  // spawnRectNear). Passive + capture so terminals/iframes never swallow it.
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => setPointerClient(e.clientX, e.clientY);
+    window.addEventListener("pointermove", onMove, { capture: true, passive: true });
+    return () => window.removeEventListener("pointermove", onMove, { capture: true } as EventListenerOptions);
   }, []);
 
   // Free mode: couple the overlay to the viewport exactly (scene -> screen), so

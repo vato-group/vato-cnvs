@@ -12,6 +12,7 @@ import {
   encodeUtf8,
   onPtyExit,
   onPtyOutput,
+  ptyBacklog,
   ptyIsAlive,
   ptyResize,
   ptySpawn,
@@ -216,9 +217,18 @@ export function TerminalPane({ win }: { win: WindowItem }) {
     setOverlay(null);
     updateWindow(win.id, { started: true });
     markFinished();
+    // Repaint the fresh xterm from the PTY's backlog. A full-screen TUI redraws
+    // itself on the SIGWINCH below, but a plain shell never does — without the
+    // replay it would stay black until the next keystroke ("noir au switch de
+    // workspace, revient au scroll/Ctrl-C").
+    const backlog = await ptyBacklog(win.id).catch(() => null);
+    if (backlog && backlog.length) {
+      dlog(`replay backlog ${backlog.length}b`);
+      writeRef.current?.(backlog);
+    }
     const { cols, rows } = sizeRef.current;
     ptyResize(win.id, rows, cols).catch(() => {});
-    nudgeRedraw(); // the fresh xterm is blank until the CLI redraws
+    nudgeRedraw(); // belt-and-braces: force a TUI to repaint its alternate screen
   }, [subscribe, nudgeRedraw, updateWindow, markFinished, win.id]);
 
   const resume = useCallback(async () => {

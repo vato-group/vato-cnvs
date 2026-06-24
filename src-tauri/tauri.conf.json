@@ -38,6 +38,13 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.plist",
+      "signingIdentity": "Developer ID Application: Noah d'hondt (22NT733Y82)",
+      "providerShortName": "22NT733Y82"
+    }
   }
 }

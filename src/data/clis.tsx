@@ -1,5 +1,17 @@
 import type { ReactNode } from "react";
 import type { CliId, CliLaunchConfig } from "../types";
+import { IS_WINDOWS, IS_MAC } from "../lib/platform";
+
+/**
+ * Default interactive shell per platform. Windows keeps PowerShell; macOS uses
+ * a zsh login shell (the system default since Catalina) and Linux a bash login
+ * shell. `-l` loads the user's profile so PATH-installed CLIs resolve.
+ */
+const SHELL_LAUNCH: { program: string; args: string[] } = IS_WINDOWS
+  ? { program: "powershell.exe", args: ["-NoLogo"] }
+  : IS_MAC
+    ? { program: "zsh", args: ["-l"] }
+    : { program: "bash", args: ["-l"] };
 
 /** A one-click launch flag toggle shown in Settings (e.g. "Bypass permissions"). */
 export interface CliPreset {
@@ -87,7 +99,7 @@ export const CLIS: Record<CliId, CliDef> = {
   cursor: { id: "cursor", label: "Cursor", program: "cursor-agent", args: [], color: "#6CA0FF", agent: true, Icon: CursorIcon },
   opencode: { id: "opencode", label: "OpenCode", program: "opencode", args: [], color: "#A78BFA", agent: true, Icon: OpenCodeIcon },
   antigravity: { id: "antigravity", label: "Antigravity", program: "antigravity", args: [], color: "#F472B6", agent: true, Icon: AntigravityIcon },
-  shell: { id: "shell", label: "Shell", program: "powershell.exe", args: ["-NoLogo"], color: "#8B95A1", agent: false, Icon: ShellIcon },
+  shell: { id: "shell", label: "Shell", program: SHELL_LAUNCH.program, args: SHELL_LAUNCH.args, color: "#8B95A1", agent: false, Icon: ShellIcon },
 };
 
 /** Display/menu order. */

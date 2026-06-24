@@ -3,7 +3,7 @@ import { Excalidraw } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import type { Workspace } from "../types";
 import { useStore } from "../store";
-import { getExcalidrawApi, setExcalidrawApi, selectionSignature, setFocusMode, useCanvasState, type ToolType } from "./canvasState";
+import { getExcalidrawApi, selectTool, setExcalidrawApi, selectionSignature, setFocusMode, useCanvasState, type ToolType } from "./canvasState";
 import { loadSceneFiles, pruneFiles, referencedFileIds, saveSceneFiles, type StoredFiles } from "./sceneFiles";
 
 interface Props {
@@ -122,7 +122,14 @@ export function ExcalidrawCanvas({ workspace }: Props) {
       if (useStore.getState().focusMode) setFocusMode(false);
     }
     const tool = appState.activeTool?.type as ToolType | undefined;
-    if (tool && tool !== cs.activeTool) cs.setActiveTool(tool);
+    if (tool && tool !== cs.activeTool) {
+      // Excalidraw auto-reverts to "selection" after finishing a shape/drag (and
+      // on Escape). Hand (pan) is the app's resting tool, so bounce that auto-
+      // revert back to Hand. Explicit picks go through selectTool(), which sets
+      // cs.activeTool first, so a user choosing Selection never lands here.
+      if (tool === "selection" && cs.activeTool !== "selection") selectTool("hand");
+      else cs.setActiveTool(tool);
+    }
 
     // Tell the style panel to refresh iff the selection or its style changed.
     cs.bumpStyle(selectionSignature(elements, appState));

@@ -12,6 +12,13 @@ use tauri::{AppHandle, Emitter, State};
 
 const B64: base64::engine::general_purpose::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 
+/// Rolling raw-output kept per PTY so a freshly mounted xterm (after a workspace
+/// switch remounts the pane) can be repainted from scratch. A plain shell never
+/// reprints its screen on SIGWINCH — only full-screen TUIs do — so without a
+/// replay the pane stays black until the next keystroke. ~512 KiB holds the
+/// visible screen plus a healthy scrollback; older bytes drop off the front.
+const BACKLOG_CAP: usize = 512 * 1024;
+
 /// Append a line to `%TEMP%/vato-cnvs/debug.log` (diagnostics for agent resume).
 /// Cheap, best-effort; never panics. Front-end logs route here too via the
 /// `debug_log` command so the whole resume flow lands in one readable file.
@@ -36,6 +43,9 @@ pub struct PtyInstance {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
     child: Box<dyn Child + Send + Sync>,
+    /// Shared with the reader thread, which appends every emitted chunk (capped
+    /// at BACKLOG_CAP). Replayed into a remounted xterm via `pty_backlog`.
+    backlog: Arc<Mutex<Vec<u8>>>,
     #[allow(dead_code)]
     pid: Option<u32>,
 }
@@ -161,12 +171,16 @@ pub fn pty_spawn(
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
 
+    let backlog = Arc::new(Mutex::new(Vec::<u8>::new()));
+    let backlog_w = backlog.clone();
+
     state.map.lock().unwrap().insert(
         args.id.clone(),
         PtyInstance {
             master: pair.master,
             writer,
             child,
+            backlog,
             pid,
         },
     );
@@ -191,6 +205,15 @@ pub fn pty_spawn(
                         first = false;
                     }
                     total += n as u64;
+                    // Keep a rolling copy so a remounted xterm can be repainted.
+                    {
+                        let mut bl = backlog_w.lock().unwrap();
+                        bl.extend_from_slice(&buf[..n]);
+                        let overflow = bl.len().saturating_sub(BACKLOG_CAP);
+                        if overflow > 0 {
+                            bl.drain(0..overflow);
+                        }
+                    }
                     let chunk = B64.encode(&buf[..n]);
                     if app_handle.emit(&out_event, chunk).is_err() {
                         dbg_log(&format!("EMIT_FAIL id={id}"));
@@ -270,4 +293,18 @@ pub fn pty_kill(state: State<'_, Arc<PtyState>>, id: String) -> Result<(), Strin
 #[tauri::command]
 pub fn pty_is_alive(state: State<'_, Arc<PtyState>>, id: String) -> bool {
     state.map.lock().unwrap().contains_key(&id)
+}
+
+/// (f) Return the rolling output backlog (base64), or None if empty/unknown.
+/// A freshly mounted xterm (workspace switch) replays this to restore its
+/// content immediately instead of waiting for the next byte of output.
+#[tauri::command]
+pub fn pty_backlog(state: State<'_, Arc<PtyState>>, id: String) -> Option<String> {
+    let map = state.map.lock().unwrap();
+    let bl = map.get(&id)?.backlog.lock().unwrap();
+    if bl.is_empty() {
+        None
+    } else {
+        Some(B64.encode(&bl[..]))
+    }
 }

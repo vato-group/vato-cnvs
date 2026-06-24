@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useStore, baseName } from "../store";
+import { useStore, useActiveWorkspace, baseName } from "../store";
 import { listDir, type DirListing } from "../pty";
 import { ArrowLeftIcon, CloseIcon, FolderIcon, RefreshIcon } from "./icons";
 
@@ -37,6 +37,8 @@ function crumbs(p: string): { seg: string; target: string }[] {
 export function NewWorkspaceDialog() {
   const addWorkspace = useStore((s) => s.addWorkspace);
   const close = useStore((s) => s.closeNewWorkspace);
+  // Start from the active workspace's folder so the picker opens where you are.
+  const activeCwd = useActiveWorkspace().cwd;
 
   const [path, setPath] = useState("");
   const [listing, setListing] = useState<DirListing | null>(null);
@@ -57,9 +59,11 @@ export function NewWorkspaceDialog() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Open on the home directory.
+  // Open on the active workspace's folder, falling back to the home directory.
   useEffect(() => {
-    go();
+    go(activeCwd);
+    // Only run on mount: capture the active cwd as it was when the dialog opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [go]);
 
   // Esc closes; keep the command line focused.
