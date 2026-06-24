@@ -1,0 +1,2212 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  overflow: hidden;
+  background: #0b0d12;
+  color: #e7e9ee;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Re-enable text selection inside terminals, inputs, whiteboard */
+.allow-select,
+.allow-select * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Custom thin scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* xterm fills its pane */
+.xterm,
+.xterm .xterm-viewport {
+  height: 100%;
+}
+.xterm-viewport::-webkit-scrollbar {
+  width: 8px;
+}
+
+/* ---------------- Window frames ---------------- */
+.vato-window {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(16, 19, 26, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+  transition: box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.vato-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 6px 0 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  cursor: move;
+  user-select: none;
+  flex: 0 0 auto;
+}
+.vato-tb-icon {
+  display: flex;
+  align-items: center;
+}
+.vato-tb-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: #eef1f6;
+  letter-spacing: 0.01em;
+}
+.vato-tb-sub {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.42);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+.vato-tb-spacer {
+  flex: 1;
+}
+.vato-tb-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: rgba(255, 255, 255, 0.55);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.vato-tb-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.vato-close:hover {
+  background: rgba(239, 68, 68, 0.85);
+  color: #fff;
+}
+.vato-body {
+  flex: 1 1 auto;
+  position: relative;
+  overflow: hidden;
+  background: #0d1016;
+}
+
+.vato-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.s-idle {
+  background: rgba(255, 255, 255, 0.22);
+}
+.s-starting {
+  background: #f59e0b;
+}
+.s-active {
+  background: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+}
+.s-finished {
+  background: #3b82f6;
+  box-shadow: 0 0 8px #3b82f6;
+}
+.s-error {
+  background: #ef4444;
+  box-shadow: 0 0 8px #ef4444;
+}
+
+/* Intelligent border: orange=active, blue=finished, red=error, none=idle */
+.vato-ring-active {
+  border-color: rgba(245, 158, 11, 0.55);
+  animation: vato-pulse 1.8s ease-in-out infinite;
+}
+.vato-ring-finished {
+  border-color: rgba(59, 130, 246, 0.6);
+  box-shadow: 0 0 0 1.5px rgba(59, 130, 246, 0.85), 0 0 22px 1px rgba(59, 130, 246, 0.25),
+    0 18px 50px rgba(0, 0, 0, 0.5);
+}
+.vato-ring-error {
+  border-color: rgba(239, 68, 68, 0.6);
+  box-shadow: 0 0 0 1.5px rgba(239, 68, 68, 0.95), 0 0 22px 1px rgba(239, 68, 68, 0.3),
+    0 18px 50px rgba(0, 0, 0, 0.5);
+}
+@keyframes vato-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1.5px rgba(245, 158, 11, 0.85), 0 0 20px 1px rgba(245, 158, 11, 0.22),
+      0 18px 50px rgba(0, 0, 0, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 1.6px rgba(245, 158, 11, 1), 0 0 34px 5px rgba(245, 158, 11, 0.45),
+      0 18px 50px rgba(0, 0, 0, 0.5);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vato-ring-active {
+    animation: none;
+    box-shadow: 0 0 0 1.5px rgba(245, 158, 11, 0.85), 0 18px 50px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* Drop-zone frame shown while dragging a window to re-tile */
+.vato-drop-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 12px;
+  border: 2px dashed rgba(108, 160, 255, 0.85);
+  background: rgba(108, 160, 255, 0.12);
+  box-shadow: 0 0 0 1px rgba(108, 160, 255, 0.25), inset 0 0 40px rgba(108, 160, 255, 0.12);
+  pointer-events: none;
+  z-index: 1;
+}
+.vato-window.dragging {
+  opacity: 0.92;
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.6);
+  cursor: grabbing;
+}
+
+/* Centered overlay placeholder when an image is pasted into a terminal */
+.vato-paste-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(8, 10, 14, 0.55);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+  z-index: 5;
+  animation: vato-fade 0.2s ease;
+}
+.vato-paste-overlay img {
+  max-width: 70%;
+  max-height: 55%;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+.vato-paste-overlay .cap {
+  font-size: 12px;
+  color: #e7e9ee;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+@keyframes vato-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Start / stopped overlay for terminals */
+.vato-term-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(10, 12, 17, 0.72);
+  z-index: 4;
+}
+.vato-term-overlay .msg {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 13px;
+}
+.vato-start-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.vato-start-btn:hover {
+  background: var(--accent, rgba(255, 255, 255, 0.16));
+  transform: translateY(-1px);
+}
+
+/* ---------------- App shell ---------------- */
+.vato-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ---------------- Top bar ---------------- */
+.vato-topbar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  background: rgba(18, 22, 30, 0.72);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  z-index: 50;
+}
+.vato-brand-mark {
+  width: 24px;
+  height: 24px;
+  margin: 0 4px 0 6px;
+  border-radius: 7px;
+  object-fit: contain;
+  flex: 0 0 auto;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.vato-ws-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #eaecf1;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+}
+.vato-ws-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.vato-ws-tabs {
+  display: flex;
+  gap: 4px;
+}
+.vato-ws-tab {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.72);
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.vato-ws-tab:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.vato-icon-btn {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.72);
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.vato-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.vato-agent-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 15px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ef9a63, #e2814b);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(226, 129, 75, 0.35);
+}
+.vato-agent-btn:hover {
+  filter: brightness(1.07);
+}
+
+/* ---------------- Dropdown / menu ---------------- */
+.vato-dd {
+  position: relative;
+  display: inline-block;
+}
+.vato-dd-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+.vato-dd-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  background: rgba(20, 24, 33, 0.97);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  z-index: 61;
+  padding: 8px;
+  max-height: 72vh;
+  overflow: auto;
+}
+.vato-dd-panel.left {
+  left: 0;
+}
+.vato-dd-panel.right {
+  right: 0;
+}
+.vato-dd-panel.up {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+.vato-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.vato-menu-label {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.42);
+  padding: 7px 8px 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.vato-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  color: #e7e9ee;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+.vato-menu-item:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+}
+.vato-menu-item .label {
+  flex: 1;
+}
+.vato-menu-item.on {
+  background: rgba(108, 160, 255, 0.15);
+}
+.vato-menu-item.danger {
+  color: #ff8585;
+}
+.vato-menu-item.danger:hover {
+  background: rgba(239, 68, 68, 0.15);
+}
+.vato-menu-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.vato-menu-item .muted {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+}
+.vato-menu-sep {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 6px 4px;
+}
+.vato-input {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #eaecf1;
+  font-size: 13px;
+  outline: none;
+  margin-bottom: 4px;
+}
+.vato-input:focus {
+  border-color: rgba(120, 160, 255, 0.6);
+}
+.vato-bg-presets {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+  margin: 4px 0;
+}
+.vato-bg-swatch {
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+}
+.vato-bg-swatch:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+.vato-bg-row {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0;
+}
+.vato-mini-btn {
+  flex: 1;
+  padding: 6px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e7e9ee;
+  font-size: 12px;
+  cursor: pointer;
+}
+.vato-mini-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ---------------- Background gallery (templates) ---------------- */
+.vato-bg-gallery {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 4px 0 2px;
+}
+.vato-bg-tile {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background-color: #0b0d12;
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+  overflow: hidden;
+  padding: 0;
+  transition: border-color 0.12s ease, transform 0.12s ease;
+}
+.vato-bg-tile::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0) 55%);
+}
+.vato-bg-tile:hover {
+  border-color: rgba(255, 255, 255, 0.45);
+  transform: translateY(-1px);
+}
+.vato-bg-tile.on {
+  border-color: #6ea8fe;
+  box-shadow: 0 0 0 1px #6ea8fe;
+}
+.vato-bg-tile-label {
+  position: absolute;
+  left: 7px;
+  bottom: 5px;
+  z-index: 1;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+.vato-bg-tile-badge {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 8px;
+  padding-left: 1px;
+  pointer-events: none;
+}
+
+/* ---------------- Left toolbar ---------------- */
+.vato-toolbar {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px 5px;
+  background: rgba(18, 22, 30, 0.78);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  z-index: 50;
+}
+.vato-tool {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.66);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.vato-tool:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.vato-tool.on {
+  background: rgba(108, 160, 255, 0.22);
+  color: #cfe0ff;
+}
+.vato-tool.agent.on {
+  background: rgba(226, 129, 75, 0.24);
+  color: #f3c3a6;
+}
+.vato-tool.subtle {
+  color: rgba(255, 255, 255, 0.4);
+}
+.vato-tool:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.vato-tool-sep {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 4px 6px;
+}
+.vato-flyout {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 0;
+  width: 210px;
+  background: rgba(20, 24, 33, 0.98);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  padding: 8px;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ---------------- Canvas zoom control ---------------- */
+.vato-zoom {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: rgba(18, 22, 30, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  z-index: 50;
+  user-select: none;
+}
+.vato-zoom-btn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.66);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.vato-zoom-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.vato-zoom-val {
+  min-width: 50px;
+  height: 30px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.vato-zoom-val:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.vato-zoom-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ---------------- macOS traffic lights ---------------- */
+.vato-titlebar-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 38px;
+  width: 116px;
+  display: flex;
+  align-items: center;
+  padding-left: 14px;
+  z-index: 60;
+}
+.vato-traffic {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.vato-traffic .tl {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.92;
+  transition: filter 0.12s ease, transform 0.08s ease;
+}
+.vato-traffic .tl:hover {
+  filter: brightness(1.15);
+}
+.vato-traffic .tl:active {
+  transform: scale(0.92);
+}
+.tl-close {
+  background: #ff5f57;
+}
+.tl-min {
+  background: #febc2e;
+}
+.tl-max {
+  background: #28c840;
+}
+
+/* ---------------- Excalidraw = canvas ---------------- */
+.vato-excalidraw,
+.vato-excalidraw .excalidraw {
+  width: 100%;
+  height: 100%;
+  background: transparent !important;
+  --default-bg-color: transparent !important;
+}
+/* Hide Excalidraw's built-in chrome — we drive tools from the custom left toolbar. */
+.vato-excalidraw .App-menu_top,
+.vato-excalidraw .layer-ui__wrapper__top-right,
+.vato-excalidraw .footer-center,
+.vato-excalidraw .layer-ui__wrapper__footer,
+.vato-excalidraw .help-icon,
+.vato-excalidraw .scroll-back-to-content,
+.vato-excalidraw .layer-ui__wrapper .welcome-screen-center {
+  display: none !important;
+}
+/* Hide Excalidraw's native contextual style panel — replaced by ShapeStylePanel. */
+.vato-excalidraw .App-menu__left {
+  display: none !important;
+}
+
+/* ---------------- Shape style panel (custom design panel) ---------------- */
+.vato-style-panel {
+  position: absolute;
+  left: 64px;
+  top: 84px;
+  width: 246px;
+  max-height: calc(100vh - 168px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background: rgba(18, 22, 30, 0.82);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+  z-index: 48;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+.vato-style-panel::-webkit-scrollbar {
+  width: 8px;
+}
+.vato-style-panel::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+}
+.vato-style-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.vato-style-head .name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #eef1f6;
+}
+.vato-style-head .sub {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+.vato-style-section {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.vato-style-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.44);
+}
+.vato-style-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.vato-sw {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  padding: 0;
+  position: relative;
+  transition: transform 0.1s ease, box-shadow 0.12s ease;
+}
+.vato-sw:hover {
+  transform: translateY(-1px);
+}
+.vato-sw.on {
+  box-shadow: 0 0 0 2px #0b0d12, 0 0 0 4px #6ca0ff;
+}
+.vato-sw.transp {
+  background: repeating-conic-gradient(rgba(255, 255, 255, 0.22) 0% 25%, transparent 0% 50%) 50% / 10px 10px;
+  background-color: rgba(255, 255, 255, 0.04);
+}
+.vato-sw.custom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 15px;
+  line-height: 1;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+}
+.vato-sw.custom input[type="color"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  padding: 0;
+  border: none;
+}
+.vato-style-seg {
+  display: flex;
+  gap: 4px;
+}
+.vato-style-segbtn {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.62);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.vato-style-segbtn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: #fff;
+}
+.vato-style-segbtn.on {
+  background: rgba(108, 160, 255, 0.2);
+  border-color: rgba(108, 160, 255, 0.5);
+  color: #cfe0ff;
+}
+.vato-style-segbtn .txt {
+  font-size: 12px;
+  font-weight: 600;
+}
+.vato-style-heads {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.vato-style-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+}
+.vato-style-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #6ca0ff;
+  border: 2px solid #0d1016;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+/* ---------------- Voice bar ---------------- */
+.vato-voicebar {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(820px, 90vw);
+  padding: 7px 9px 7px 9px;
+  background: rgba(18, 22, 30, 0.74);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  z-index: 50;
+}
+.vato-voice-mic {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  flex: 0 0 auto;
+  touch-action: none;
+}
+.vato-voice-mic:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.vato-voice-mic.live {
+  background: rgba(239, 68, 68, 0.22);
+  color: #ff9a9a;
+}
+.vato-voice-mic.needs-setup {
+  color: rgba(245, 166, 35, 0.95);
+  background: rgba(245, 166, 35, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(245, 166, 35, 0.5);
+}
+.vato-voice-mic.busy {
+  background: rgba(108, 160, 255, 0.2);
+  color: #9cc0ff;
+  animation: vato-voice-pulse 1s ease-in-out infinite;
+}
+@keyframes vato-voice-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.vato-voice-ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid rgba(239, 68, 68, 0.5);
+  transform: scale(calc(1 + var(--lvl, 0) * 0.55));
+  transition: transform 70ms linear;
+  pointer-events: none;
+}
+.vato-voice-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #dfe3ea;
+  font-size: 12.5px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.vato-voice-target:hover,
+.vato-voice-target.on {
+  background: rgba(255, 255, 255, 0.1);
+}
+.vato-voice-target .nm {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 96px;
+}
+.vato-voice-target .nm.dim {
+  color: rgba(255, 255, 255, 0.4);
+}
+.vato-voice-input {
+  flex: 1;
+  min-width: 60px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #e7e9ee;
+  font-size: 14px;
+}
+.vato-voice-input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+.vato-voice-send {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(108, 160, 255, 0.92);
+  border: none;
+  color: #0b0d12;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.vato-voice-send:hover {
+  background: #8fb6ff;
+}
+.vato-voice-gear {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.vato-voice-gear:hover,
+.vato-voice-gear.on {
+  color: #e7e9ee;
+  background: rgba(255, 255, 255, 0.08);
+}
+.vato-voice-gear.warn::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f5a623;
+  border: 1.5px solid rgba(18, 22, 30, 0.95);
+}
+.vato-voice-tag {
+  font-size: 11.5px;
+  color: #9cc0ff;
+  white-space: nowrap;
+  padding: 0 4px;
+  flex: 0 0 auto;
+  animation: vato-voice-pulse 1.1s ease-in-out infinite;
+}
+.vato-voice-engine-state {
+  font-size: 11.5px;
+  padding: 8px 8px 4px;
+}
+.vato-voice-engine-state.ok {
+  color: #7fe0a8;
+}
+.vato-voice-engine-state.warn {
+  color: #f5b15a;
+}
+.vato-voice-error {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 90%;
+  padding: 7px 12px;
+  border-radius: 10px;
+  background: rgba(60, 18, 18, 0.92);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #ffc4c4;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* segmented control + checkbox toggle (shared by voice popover + settings) */
+.vato-seg {
+  display: flex;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+  padding: 3px;
+}
+.vato-seg-btn {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+  cursor: pointer;
+}
+.vato-seg-btn:hover {
+  color: #e7e9ee;
+}
+.vato-seg-btn.on {
+  background: rgba(108, 160, 255, 0.2);
+  color: #cfe0ff;
+}
+.vato-tick {
+  position: relative;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  flex: 0 0 auto;
+}
+.vato-tick.on {
+  background: #6ca0ff;
+  border-color: #6ca0ff;
+}
+.vato-tick.on::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid #0b0d12;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.vato-menu-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* STT settings section */
+select.vato-input {
+  appearance: none;
+  cursor: pointer;
+}
+select.vato-input option {
+  background: #161a22;
+  color: #eaecf1;
+}
+.vato-stt-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 12.5px;
+}
+.vato-stt-status .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.vato-stt-status.ok .dot {
+  background: #54d98c;
+  box-shadow: 0 0 8px rgba(84, 217, 140, 0.7);
+}
+.vato-stt-status.warn .dot {
+  background: #f5a623;
+  box-shadow: 0 0 8px rgba(245, 166, 35, 0.6);
+}
+.vato-stt-status .txt {
+  flex: 1;
+  color: #dfe3ea;
+}
+.vato-stt-status.ok .txt {
+  color: #9be9b8;
+}
+.vato-stt-model {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.vato-stt-model-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.vato-stt-model-row .lbl {
+  font-size: 12.5px;
+  color: #e7e9ee;
+  display: flex;
+  align-items: center;
+}
+.vato-stt-model-row .vato-mini-btn {
+  flex: 0 0 auto;
+  min-width: 108px;
+}
+.vato-stt-bar {
+  margin-top: 7px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.vato-stt-bar > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: left center;
+  background: linear-gradient(90deg, #6ca0ff, #8fffc1);
+  transition: transform 120ms linear;
+}
+.vato-stt-err {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #ff9a9a;
+}
+.vato-stt-hint {
+  margin-top: 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.45);
+}
+.vato-stt-hint code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #cfe0ff;
+}
+.vato-ws-badge.ok {
+  color: #bff0d0;
+  background: rgba(84, 217, 140, 0.2);
+}
+.vato-mini-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ---------------- Grid overview ---------------- */
+.vato-grid-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  background: rgba(8, 10, 14, 0.82);
+  backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  padding: 24px 32px;
+}
+.vato-grid-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #eef1f6;
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 20px;
+}
+.vato-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  overflow: auto;
+  align-content: start;
+}
+.vato-grid-card {
+  position: relative;
+  height: 150px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  cursor: pointer;
+  color: #fff;
+  text-align: left;
+  padding: 0;
+}
+.vato-grid-card.on {
+  border: 2px solid #ef9a63;
+}
+.vato-grid-card-dim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(transparent 40%, rgba(0, 0, 0, 0.7));
+}
+.vato-grid-card-body {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  padding: 12px 14px;
+}
+.vato-grid-card-name {
+  font-size: 16px;
+  font-weight: 700;
+}
+.vato-grid-card-meta {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+}
+.vato-grid-card.add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.5);
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+}
+.vato-grid-card.add:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+/* Mini mosaic mirroring the workspace's tiled windows. */
+.vato-grid-card-preview {
+  position: absolute;
+  inset: 12px 12px 56px;
+  display: grid;
+  gap: 5px;
+  pointer-events: none;
+}
+.vato-grid-card-preview .tile {
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.12);
+  min-height: 0;
+}
+.vato-grid-card-cwd {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 3px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+}
+/* "focus" badge — this space has focus mode on. */
+.vato-grid-card-tag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffd9b8;
+  background: rgba(239, 154, 99, 0.22);
+  border: 1px solid rgba(239, 154, 99, 0.5);
+}
+.vato-grid-card-del {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(18, 20, 26, 0.7);
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.vato-grid-card:hover .vato-grid-card-del {
+  opacity: 1;
+}
+.vato-grid-card-del:hover {
+  background: rgba(220, 70, 70, 0.85);
+  border-color: rgba(220, 70, 70, 0.9);
+  color: #fff;
+}
+
+/* ---------------- Settings panel ---------------- */
+.vato-settings-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  background: rgba(8, 10, 14, 0.62);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+/* ---------------- Resume-session dialog ---------------- */
+.vato-resume-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 140;
+  background: rgba(8, 10, 14, 0.66);
+  backdrop-filter: blur(7px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  animation: vato-fade 0.2s ease;
+}
+.vato-resume {
+  width: min(520px, 92vw);
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(20, 24, 33, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.vato-resume-head {
+  padding: 22px 22px 14px;
+}
+.vato-resume-head h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #eef1f6;
+}
+.vato-resume-head p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.62);
+}
+.vato-resume-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 14px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.vato-resume-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.vato-resume-list .ico {
+  display: flex;
+  flex: 0 0 auto;
+}
+.vato-resume-list .name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #eef1f6;
+  flex: 0 0 auto;
+}
+.vato-resume-list .meta {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vato-resume-actions {
+  display: flex;
+  gap: 8px;
+  padding: 16px 18px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.vato-resume-btn {
+  padding: 9px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #eef1f6;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
+}
+.vato-resume-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+.vato-resume-btn.primary {
+  background: #4f7cff;
+  border-color: #4f7cff;
+  color: #fff;
+}
+.vato-resume-btn.primary:hover {
+  background: #5d87ff;
+}
+.vato-resume-btn.ghost {
+  margin-left: auto;
+  background: transparent;
+  border-color: transparent;
+  color: rgba(255, 255, 255, 0.55);
+}
+.vato-resume-btn.ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  transform: none;
+}
+
+/* ---------------- New-workspace folder picker ---------------- */
+.vato-newws-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 150;
+  background: rgba(8, 10, 14, 0.66);
+  backdrop-filter: blur(7px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  animation: vato-fade 0.2s ease;
+}
+.vato-newws {
+  width: min(620px, 94vw);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(20, 24, 33, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.vato-newws-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 20px 14px;
+}
+.vato-newws-head h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #eef1f6;
+}
+.vato-newws-head p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.6);
+}
+.vato-newws-crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 8px 16px;
+  margin: 0 16px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  font-size: 12.5px;
+}
+.vato-newws-crumbs .crumb {
+  display: inline-flex;
+  align-items: center;
+}
+.vato-newws-crumbs .crumb button {
+  background: transparent;
+  border: none;
+  color: #cdd6e3;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 5px;
+}
+.vato-newws-crumbs .crumb button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.vato-newws-crumbs .sep {
+  color: rgba(255, 255, 255, 0.32);
+}
+.vato-newws-refresh {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 6px;
+}
+.vato-newws-refresh:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+.vato-newws-list {
+  margin: 10px 16px 0;
+  padding: 6px;
+  flex: 1 1 auto;
+  min-height: 180px;
+  overflow: auto;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+}
+.vato-newws-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #d7dee9;
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+}
+.vato-newws-row:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+}
+.vato-newws-row svg {
+  color: #ef9a63;
+  flex: 0 0 auto;
+}
+.vato-newws-row.up svg {
+  color: rgba(255, 255, 255, 0.55);
+}
+.vato-newws-row .nm {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vato-newws-row .hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+.vato-newws-empty {
+  padding: 18px 10px;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.4);
+  text-align: center;
+}
+.vato-newws-err {
+  padding: 12px 10px;
+  font-size: 12.5px;
+  color: #ff9b9b;
+}
+.vato-newws-cmd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 16px 0;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.vato-newws-cmd:focus-within {
+  border-color: rgba(239, 154, 99, 0.55);
+}
+.vato-newws-cmd .prompt {
+  color: #ef9a63;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  font-weight: 700;
+}
+.vato-newws-cmd input {
+  flex: 1 1 auto;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #eef1f6;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  font-size: 13px;
+  padding: 11px 0;
+}
+.vato-newws-cmd input::placeholder {
+  color: rgba(255, 255, 255, 0.32);
+}
+.vato-newws-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 18px 16px;
+  margin-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.vato-newws-target {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.vato-newws-target .lbl {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+}
+.vato-newws-target code {
+  font-size: 12px;
+  color: #cdd6e3;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+.vato-newws-target .meta {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+.vato-newws-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.vato-resume-btn.primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.vato-settings {
+  width: min(880px, 94vw);
+  height: min(620px, 86vh);
+  display: flex;
+  flex-direction: row;
+  background: rgba(20, 24, 33, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.vato-settings-side {
+  flex: 0 0 196px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px 10px;
+  background: rgba(0, 0, 0, 0.22);
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+}
+.vato-settings-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #eef1f6;
+  padding: 6px 10px 14px;
+  letter-spacing: 0.01em;
+}
+.vato-settings-brand img {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  object-fit: contain;
+  -webkit-user-drag: none;
+}
+.vato-side-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 13.5px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.vato-side-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+.vato-side-item.on {
+  background: rgba(108, 160, 255, 0.18);
+  color: #cfe0ff;
+}
+.vato-settings-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.vato-settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #eef1f6;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.vato-settings-body {
+  overflow: auto;
+  padding: 18px 20px 24px;
+}
+.vato-set-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 700;
+  color: #cfd5e0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 12px;
+}
+.vato-set-cli {
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 10px;
+}
+.vato-set-cli-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  color: #eef1f6;
+  margin-bottom: 8px;
+}
+.vato-set-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.vato-chip {
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.vato-chip:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.vato-chip.on {
+  background: rgba(108, 160, 255, 0.22);
+  border-color: rgba(108, 160, 255, 0.6);
+  color: #cfe0ff;
+}
+.vato-set-preview {
+  display: block;
+  margin-top: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  color: #8fe3b0;
+  font-family: "Cascadia Code", Consolas, ui-monospace, monospace;
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.vato-set-group {
+  margin-bottom: 8px;
+}
+.vato-set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 8px;
+  border-radius: 8px;
+}
+.vato-set-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.vato-set-row .label {
+  font-size: 13px;
+  color: #dbe0e9;
+}
+.vato-kbd {
+  flex: 0 0 auto;
+  min-width: 96px;
+  text-align: center;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #eaecf1;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.vato-kbd:hover {
+  border-color: rgba(120, 160, 255, 0.6);
+}
+.vato-kbd.rec {
+  border-color: #ef9a63;
+  color: #f3c3a6;
+  background: rgba(226, 129, 75, 0.15);
+}
+
+/* Workspaces section */
+.vato-ws-card {
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  margin-bottom: 10px;
+}
+.vato-ws-card.on {
+  border-color: rgba(108, 160, 255, 0.5);
+  background: rgba(108, 160, 255, 0.07);
+}
+.vato-ws-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.vato-ws-card-top .vato-input {
+  flex: 1;
+}
+.vato-ws-badge {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: #cfe0ff;
+  background: rgba(108, 160, 255, 0.2);
+  padding: 4px 9px;
+  border-radius: 999px;
+}
+.vato-ws-card-meta {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 8px;
+}
+
+/* About section */
+.vato-about-logo {
+  display: block;
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
+  object-fit: contain;
+  margin-bottom: 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  -webkit-user-drag: none;
+}
+.vato-about-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: #eef1f6;
+}
+.vato-about-sub {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.55;
+  margin: 8px 0 16px;
+}
+.vato-about-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  font-size: 13px;
+}
+.vato-about-row span {
+  color: rgba(255, 255, 255, 0.5);
+}
+.vato-about-row b {
+  color: #e7e9ee;
+  font-weight: 600;
+  text-align: right;
+}
+
+/* ---------------- Exit fullscreen ---------------- */
+.vato-exit-fs {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: rgba(18, 22, 30, 0.88);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e7e9ee;
+  font-size: 13px;
+  cursor: pointer;
+}
+.vato-exit-fs:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ---------------- Browser pane ---------------- */
+.vato-browser {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+.vato-browser-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex: 0 0 auto;
+}
+.vato-browser-form {
+  flex: 1;
+}
+.vato-browser-input {
+  width: 100%;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #eaecf1;
+  font-size: 13px;
+  outline: none;
+}
+.vato-browser-input:focus {
+  border-color: rgba(120, 160, 255, 0.6);
+}
+.vato-browser-loading {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 0 6px;
+}
+.vato-browser-frame {
+  flex: 1;
+  width: 100%;
+  border: none;
+  background: #fff;
+}
+
+/* ---------------- Whiteboard pane ---------------- */
+.vato-whiteboard {
+  position: absolute;
+  inset: 0;
+}
+.vato-send-ai {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border-radius: 9px;
+  background: linear-gradient(180deg, #ef9a63, #e2814b);
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(226, 129, 75, 0.35);
+}
+.vato-send-ai:hover {
+  filter: brightness(1.07);
+}
+.vato-wb-msg {
+  position: absolute;
+  top: 52px;
+  right: 12px;
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 8px;
+}
+
+/* ---------------- Focus "zen" mode ---------------- */
+/* In focus the chrome tucks away toward its edge so the window grid grows; a
+   smooth hover of the matching edge rail (or of the bar itself) slides it back.
+   The transition lives on the bars unconditionally so entering AND leaving focus
+   both animate. Hidden bars translate fully off-screen, so they stop catching
+   pointer events without needing pointer-events juggling. */
+.vato-topbar,
+.vato-toolbar,
+.vato-voicebar,
+.vato-zoom,
+.vato-style-panel {
+  transition:
+    transform 280ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    opacity 200ms ease;
+}
+
+/* Thin invisible hover rails sitting in the grid gutters at each edge. They live
+   above the canvas (to catch hover) but below the bars (so a revealed bar stays
+   clickable). Kept thin enough to land in the gutter, clear of the windows. */
+.vato-hot {
+  position: absolute;
+  z-index: 45;
+}
+.vato-hot-top {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 18px;
+}
+.vato-hot-left {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 18px;
+}
+.vato-hot-bottom {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 18px;
+}
+
+/* Hidden states — push each bar off its edge and fade it out. The base centring
+   transforms (translateX/Y(-50%)) are preserved so it slides straight back. */
+.vato-focus .vato-topbar {
+  transform: translateX(-50%) translateY(calc(-100% - 16px));
+  opacity: 0;
+}
+.vato-focus .vato-toolbar {
+  transform: translateY(-50%) translateX(calc(-100% - 16px));
+  opacity: 0;
+}
+.vato-focus .vato-style-panel {
+  transform: translateX(calc(-100% - 64px));
+  opacity: 0;
+}
+.vato-focus .vato-voicebar {
+  transform: translateX(-50%) translateY(calc(100% + 24px));
+  opacity: 0;
+}
+.vato-focus .vato-zoom {
+  transform: translateY(calc(100% + 24px));
+  opacity: 0;
+}
+
+/* Reveal — hovering the edge rail, or the bar itself once it's on-screen. */
+.vato-focus .vato-hot-top:hover ~ .vato-topbar,
+.vato-focus .vato-topbar:hover {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+.vato-focus .vato-hot-left:hover ~ .vato-toolbar,
+.vato-focus .vato-toolbar:hover {
+  transform: translateY(-50%) translateX(0);
+  opacity: 1;
+}
+.vato-focus .vato-hot-left:hover ~ .vato-style-panel,
+.vato-focus .vato-style-panel:hover {
+  transform: translateX(0);
+  opacity: 1;
+}
+.vato-focus .vato-hot-bottom:hover ~ .vato-voicebar,
+.vato-focus .vato-voicebar:hover {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+.vato-focus .vato-hot-bottom:hover ~ .vato-zoom,
+.vato-focus .vato-zoom:hover {
+  transform: translateY(0);
+  opacity: 1;
+}
