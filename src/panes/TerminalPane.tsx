@@ -21,10 +21,13 @@ import {
 } from "../pty";
 import { bus } from "../lib/bus";
 import { attachPasteImage } from "../lib/clipboard";
+import { registerTermReader, serializeTerminal } from "../voice/termAccess";
+import { gt, useT } from "../i18n";
 
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 
 export function TerminalPane({ win }: { win: WindowItem }) {
+  const t = useT();
   const setStatus = useStore((s) => s.setStatus);
   const updateWindow = useStore((s) => s.updateWindow);
   const setLastActiveTerminal = useStore((s) => s.setLastActiveTerminal);
@@ -44,9 +47,20 @@ export function TerminalPane({ win }: { win: WindowItem }) {
   const resumableMarkedRef = useRef(false);
   const cancelCaptureRef = useRef<(() => void) | null>(null);
   const readyRef = useRef(false);
+  // When an agent PTY exits, we spawn a plain shell instead of showing the
+  // stopped overlay. This ref tracks whether that fallback shell is active so
+  // we don't loop: shell exit → stopped overlay (not another fallback).
+  const shellFallbackActiveRef = useRef(false);
+  const spawnShellFallbackRef = useRef<(() => Promise<void>) | null>(null);
 
   const [overlay, setOverlay] = useState<{ kind: "idle" | "stopped"; error?: string } | null>(null);
-  const [paste, setPaste] = useState<{ thumb: string; cap: string } | null>(null);
+  const [paste, setPaste] = useState<{ thumb: string; cap: string; phase: "loading" | "ready" } | null>(null);
+  const pasteTimers = useRef<number[]>([]);
+  const clearPaste = useCallback(() => {
+    pasteTimers.current.forEach((id) => window.clearTimeout(id));
+    pasteTimers.current = [];
+    setPaste(null);
+  }, []);
 
   // ---- intelligent-border state machine driven by output activity ----
   // Flip to the blue "finished" ring, then auto-clear it back to idle (no ring)
@@ -123,7 +137,14 @@ export function TerminalPane({ win }: { win: WindowItem }) {
       cancelCaptureRef.current?.();
       cancelCaptureRef.current = null;
       updateWindow(win.id, { runningCli: undefined }); // back to the spawn identity
-      setOverlay({ kind: "stopped", error: "Processus terminé" });
+      // Agent pane: auto-spawn a plain shell so the user isn't left with a blank
+      // pane. If the fallback shell itself exits, show the stopped overlay normally.
+      if (def.agent && !shellFallbackActiveRef.current) {
+        void spawnShellFallbackRef.current?.();
+      } else {
+        shellFallbackActiveRef.current = false;
+        setOverlay({ kind: "stopped", error: gt("term.processEnded") });
+      }
     });
     unlistenRef.current.push(offOut, offExit);
   }, [markActive, setStatus, updateWindow, def.agent, win.id]);
@@ -146,6 +167,33 @@ export function TerminalPane({ win }: { win: WindowItem }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [win.id]);
 
+  const spawnShellFallback = useCallback(async () => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    shellFallbackActiveRef.current = true;
+    const shellDef = CLIS.shell;
+    const ok = await cliCheck(shellDef.program);
+    if (!ok) {
+      startedRef.current = false;
+      shellFallbackActiveRef.current = false;
+      setOverlay({ kind: "idle", error: gt("term.notFound", { program: shellDef.program }) });
+      return;
+    }
+    setOverlay(null);
+    setStatus(win.id, "starting");
+    const { cols, rows } = sizeRef.current;
+    try {
+      await ptySpawn({ id: win.id, program: shellDef.program, args: shellDef.args, cwd: win.cwd, rows, cols });
+      nudgeRedraw();
+    } catch (e) {
+      startedRef.current = false;
+      shellFallbackActiveRef.current = false;
+      setStatus(win.id, "error");
+      setOverlay({ kind: "idle", error: String(e) });
+    }
+  }, [nudgeRedraw, setStatus, win.id, win.cwd]);
+  spawnShellFallbackRef.current = spawnShellFallback;
+
   const spawnNew = useCallback(async () => {
     if (startedRef.current) {
       dlog("spawnNew skipped (already started)");
@@ -161,7 +209,7 @@ export function TerminalPane({ win }: { win: WindowItem }) {
     dlog(`spawnNew cliCheck(${def.program})=${ok}`);
     if (!ok) {
       startedRef.current = false;
-      setOverlay({ kind: "idle", error: `« ${def.program} » introuvable sur le PATH` });
+      setOverlay({ kind: "idle", error: gt("term.notFound", { program: def.program }) });
       return;
     }
     await subscribe();
@@ -273,6 +321,11 @@ export function TerminalPane({ win }: { win: WindowItem }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [win.autostart, resume]);
 
+  // Expose this pane's rendered screen text to the voice interpreter, so
+  // read_terminal_context can ground a prompt in the agent's actual on-screen
+  // state (cleaner than the raw PTY backlog of overlapping TUI frames).
+  useEffect(() => registerTermReader(win.id, () => serializeTerminal(term.getTerm())), [win.id]);
+
   // Drop listeners on unmount but DO NOT kill the PTY: switching workspaces
   // unmounts the pane, and we want the agent to keep running in the background.
   useEffect(() => {
@@ -285,21 +338,29 @@ export function TerminalPane({ win }: { win: WindowItem }) {
       cancelCaptureRef.current = null;
       window.clearTimeout(idleTimer.current);
       window.clearTimeout(finishedTimer.current);
+      pasteTimers.current.forEach((id) => window.clearTimeout(id));
     };
   }, []);
 
   const handleImage = useCallback(
     async (dataUrl: string) => {
       try {
+        // Show a 1s "loading" state, then the preview for 1s, then auto-hide.
+        // Clicking anywhere dismisses it early (see onMouseDown below).
+        clearPaste();
+        setPaste({ thumb: dataUrl, cap: "", phase: "loading" });
         const path = await saveTempImage(dataUrl);
-        setPaste({ thumb: dataUrl, cap: `📎 ${baseName(path)} → ${win.title}` });
         if (startedRef.current) ptyWrite(win.id, encodeUtf8(`"${path}" `)).catch(() => {});
-        window.setTimeout(() => setPaste(null), 3500);
+        const cap = `📎 ${baseName(path)} → ${win.title}`;
+        pasteTimers.current.push(
+          window.setTimeout(() => setPaste({ thumb: dataUrl, cap, phase: "ready" }), 1000),
+          window.setTimeout(() => clearPaste(), 2000),
+        );
       } catch {
-        /* ignore */
+        clearPaste();
       }
     },
-    [win.id, win.title],
+    [win.id, win.title, clearPaste],
   );
 
   const paneRef = useRef<HTMLDivElement>(null);
@@ -318,14 +379,23 @@ export function TerminalPane({ win }: { win: WindowItem }) {
       ref={paneRef}
       className="vato-pane-term"
       style={{ position: "absolute", inset: 0 }}
-      onMouseDown={() => setLastActiveTerminal(win.id)}
+      onMouseDown={() => {
+        if (paste) clearPaste();
+        setLastActiveTerminal(win.id);
+      }}
     >
       <div ref={term.containerRef} style={{ position: "absolute", inset: 0, padding: "6px 6px 6px 8px" }} />
 
       {paste && (
         <div className="vato-paste-overlay">
-          <img src={paste.thumb} alt="image collée" />
-          <span className="cap">{paste.cap}</span>
+          {paste.phase === "loading" ? (
+            <span className="vato-paste-spinner" aria-label={t("term.pastedImage")} />
+          ) : (
+            <>
+              <img src={paste.thumb} alt={t("term.pastedImage")} />
+              <span className="cap">{paste.cap}</span>
+            </>
+          )}
         </div>
       )}
 
@@ -336,7 +406,7 @@ export function TerminalPane({ win }: { win: WindowItem }) {
         >
           {overlay.error && <span className="msg">{overlay.error}</span>}
           <button className="vato-start-btn vato-no-drag" onClick={() => spawnNew()}>
-            <def.Icon size={16} /> Démarrer {def.label}
+            <def.Icon size={16} /> {t("term.start", { label: def.label })}
           </button>
         </div>
       )}

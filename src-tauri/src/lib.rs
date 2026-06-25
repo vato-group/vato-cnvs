@@ -7,9 +7,7 @@ use std::sync::Arc;
 use agent_sessions::{agent_session_id, claude_session_exists};
 use base64::Engine;
 use pty::{pty_backlog, pty_is_alive, pty_kill, pty_resize, pty_spawn, pty_write, PtyState};
-use stt::{
-    stt_download, stt_install_whisper, stt_paths, stt_status, stt_transcribe, stt_transcribe_openai,
-};
+use stt::{openai_chat, openai_tts, stt_transcribe_openai};
 
 /// True if a CLI program is resolvable on PATH (handles .exe/.cmd/.ps1 via PATHEXT).
 #[tauri::command]
@@ -168,6 +166,30 @@ fn hydrate_path_from_login_shell() {
     }
 }
 
+/// Turn off WebView2's built-in "browser accelerator keys" (Ctrl+D, Ctrl+P,
+/// Ctrl+F, the lone Alt menu-accelerator, …). They are handled natively by the
+/// WebView *before* the DOM, so `preventDefault()` in our JS shortcut handler
+/// can't stop them — and when such a key reaches the WebView with no native
+/// action to perform, Windows plays its system "ding". Our own shortcuts keep
+/// working (they ride the normal DOM keydown); this only mutes the beep.
+#[cfg(windows)]
+fn silence_webview_accelerator_beep(window: &tauri::WebviewWindow) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
+    use windows::core::Interface;
+
+    let _ = window.with_webview(|webview| unsafe {
+        let Ok(core) = webview.controller().CoreWebView2() else {
+            return;
+        };
+        let Ok(settings) = core.Settings() else {
+            return;
+        };
+        if let Ok(settings) = settings.cast::<ICoreWebView2Settings3>() {
+            let _ = settings.SetAreBrowserAcceleratorKeysEnabled(false);
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Must run before any `which`/PTY work so the user's real PATH is in scope.
@@ -179,6 +201,18 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(state)
+        .setup(|_app| {
+            // Mute the Windows system "ding" that WebView2 emits on browser
+            // accelerator keys (Ctrl+D, Ctrl+P, Alt, …) used as app shortcuts.
+            #[cfg(windows)]
+            {
+                use tauri::Manager;
+                if let Some(window) = _app.get_webview_window("main") {
+                    silence_webview_accelerator_beep(&window);
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             pty_spawn,
             pty_write,
@@ -193,12 +227,9 @@ pub fn run() {
             agent_session_id,
             claude_session_exists,
             save_temp_image,
-            stt_paths,
-            stt_status,
-            stt_download,
-            stt_install_whisper,
-            stt_transcribe,
-            stt_transcribe_openai
+            stt_transcribe_openai,
+            openai_chat,
+            openai_tts
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

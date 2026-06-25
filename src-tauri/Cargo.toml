@@ -21,14 +21,21 @@ serde_json = "1"
 portable-pty = "0.9"
 base64 = "0.22"
 which = "7"
-# HTTP client for downloading STT models/binaries. native-tls -> SChannel on
-# Windows (no OpenSSL/ring C toolchain needed at build time). The bare
-# `ureq::get` has no TLS backend with default-features off, so we build an Agent
-# wired to an explicit native-tls connector (see stt.rs).
-ureq = { version = "2", default-features = false, features = ["native-tls"] }
+# HTTP client for the OpenAI calls (transcription + chat command interpreter).
+# native-tls -> SChannel on Windows (no OpenSSL/ring C toolchain needed at build
+# time). The bare `ureq::get` has no TLS backend with default-features off, so we
+# build an Agent wired to an explicit native-tls connector (see stt.rs). `json`
+# enables `send_json` for the chat proxy.
+ureq = { version = "2", default-features = false, features = ["native-tls", "json"] }
 native-tls = "0.2"
-# Unzip the whisper.cpp Windows release (one-click binary install).
-zip = { version = "2", default-features = false, features = ["deflate"] }
+
+# WebView2 plumbing — only used to turn off the browser accelerator keys
+# (Ctrl+D/Ctrl+P/Alt…) that otherwise make Windows play its system "ding" when a
+# shortcut reaches the WebView. Versions are pinned to match Tauri 2.11's own
+# webview2-com/windows so the COM interface types are identical (no type clash).
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
+windows = { version = "0.61", features = ["Win32_Foundation"] }
 
 [profile.dev]
 # Faster incremental builds during development.

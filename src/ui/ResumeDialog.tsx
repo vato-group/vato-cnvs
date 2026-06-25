@@ -1,9 +1,11 @@
 import { useStore } from "../store";
 import { CLIS } from "../data/clis";
 import type { WindowItem } from "../types";
+import { useT } from "../i18n";
 
 /** Startup prompt: relaunch last session's agents on their saved conversations. */
 export function ResumeDialog() {
+  const t = useT();
   const workspaces = useStore((s) => s.workspaces);
   const resumeAllAgents = useStore((s) => s.resumeAllAgents);
   const restartAgentsFresh = useStore((s) => s.restartAgentsFresh);
@@ -21,11 +23,8 @@ export function ResumeDialog() {
     <div className="vato-resume-overlay">
       <div className="vato-resume" onMouseDown={(e) => e.stopPropagation()}>
         <div className="vato-resume-head">
-          <h2>Reprendre la session précédente&nbsp;?</h2>
-          <p>
-            {n} agent{n > 1 ? "s" : ""} de votre dernière session. « Tout reprendre » relance
-            chaque CLI sur sa conversation, là où vous en étiez.
-          </p>
+          <h2>{t("resume.title")}</h2>
+          <p>{t("resume.desc", { n })}</p>
         </div>
 
         <ul className="vato-resume-list">
@@ -48,13 +47,13 @@ export function ResumeDialog() {
 
         <div className="vato-resume-actions">
           <button className="vato-resume-btn primary" onClick={resumeAllAgents}>
-            Tout reprendre
+            {t("resume.resumeAll")}
           </button>
           <button className="vato-resume-btn" onClick={restartAgentsFresh}>
-            Démarrer à neuf
+            {t("resume.startFresh")}
           </button>
           <button className="vato-resume-btn ghost" onClick={dismissResume}>
-            Ignorer
+            {t("resume.ignore")}
           </button>
         </div>
       </div>

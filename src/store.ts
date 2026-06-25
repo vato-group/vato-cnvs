@@ -5,8 +5,10 @@ import type {
   AppSettings,
   Background,
   CliId,
+  FocusFilter,
   PaneKind,
   SttSettings,
+  UiLang,
   View,
   WindowItem,
   Workspace,
@@ -41,6 +43,10 @@ const BASE_SHORTCUTS: Record<string, string> = {
   "pane.browser": "ctrl+b",
   "layout.tile": "ctrl+g",
   "view.focus": "ctrl+0",
+  // Shift + a letter (not a digit): Shift+digit yields the shifted glyph in
+  // `e.key` (")" not "0"), which would never match. macCombo maps this to
+  // Shift+Cmd+A.
+  "view.focusFilter": "ctrl+shift+a",
   "workspace.new": "ctrl+shift+n",
   "workspace.next": "ctrl+alt+arrowright",
   "workspace.prev": "ctrl+alt+arrowleft",
@@ -48,6 +54,8 @@ const BASE_SHORTCUTS: Record<string, string> = {
   "window.close": "ctrl+w",
   "window.fullscreen": "f11",
   "settings.open": "ctrl+,",
+  // Toggle the voice mic (push-to-talk press, or start/stop in continuous mode).
+  "voice.mic": "ctrl+shift+space",
 };
 
 /**
@@ -71,21 +79,24 @@ export const DEFAULT_SHORTCUTS: Record<string, string> = IS_MAC
   : BASE_SHORTCUTS;
 
 export const DEFAULT_STT: SttSettings = {
-  engine: "whisper",
   lang: "auto",
   mode: "ptt",
-  directInsert: false,
-  whisperBinary: "",
-  whisperModel: "",
-  parakeetBinary: "",
   openaiKey: "",
+  micDeviceId: "",
   openaiModel: "gpt-4o-mini-transcribe",
+  commandModel: "gpt-4o-mini",
+  vadThreshold: 0.014,
+  requireWakeWord: false,
+  wakeWord: "vato",
+  tts: false,
+  ttsVoice: "alloy",
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
   cli: {},
   shortcuts: { ...DEFAULT_SHORTCUTS },
   stt: { ...DEFAULT_STT },
+  lang: "fr",
 };
 
 export const DEFAULT_BG: Background = {
@@ -95,7 +106,7 @@ export const DEFAULT_BG: Background = {
 };
 
 let wsCounter = 0;
-function makeWorkspace(name?: string, cwd?: string): Workspace {
+function makeWorkspace(name?: string, cwd?: string, focusFilter: FocusFilter = "all"): Workspace {
   wsCounter += 1;
   return {
     id: crypto.randomUUID(),
@@ -105,6 +116,7 @@ function makeWorkspace(name?: string, cwd?: string): Workspace {
     scene: [],
     background: { ...DEFAULT_BG },
     cwd,
+    focusFilter,
   };
 }
 
@@ -127,6 +139,23 @@ function retile(w: Workspace): Workspace {
     ...w,
     windows: w.windows.map((win, i) => ({ ...win, ...tiles[i] })),
   };
+}
+
+/**
+ * Windows the focus-mode grid lays out, honouring the workspace's `focusFilter`.
+ * SINGLE source of truth for the visible focus set: the tiler (Canvas) AND the
+ * drag-reorder math (WindowFrame) both derive their slots from this list, so they
+ * never desync. Filtered-out panes are simply absent here — Canvas keeps them
+ * mounted but hidden, so their PTY keeps running.
+ */
+export function focusGridWindows(w: Workspace): WindowItem[] {
+  const f = w.focusFilter ?? "all";
+  if (f === "all") return w.windows;
+  return w.windows.filter((win) =>
+    f === "agents"
+      ? win.kind === "terminal" && win.cli !== "shell"
+      : win.kind === "terminal" && win.cli === "shell",
+  );
 }
 
 export interface AppState {
@@ -152,6 +181,24 @@ export interface AppState {
   settings: AppSettings;
   /** The startup "resume previous agents?" prompt has been answered/dismissed. */
   resumeDismissed: boolean;
+  /**
+   * The first-run onboarding wizard has been completed. Persisted: existing
+   * users (workspaces already present) are treated as done; brand-new launches
+   * start at `false` and see the wizard before the canvas.
+   */
+  onboardingDone: boolean;
+  /**
+   * Transient (non-persisted): the onboarding's final "practice" step is live,
+   * so the real canvas is interactive behind a non-blocking coach. Re-enables
+   * global keyboard shortcuts (otherwise suppressed while the wizard is up) so
+   * the user can actually trigger them.
+   */
+  onboardingPractice: boolean;
+
+  // onboarding
+  completeOnboarding: () => void;
+  restartOnboarding: () => void;
+  setOnboardingPractice: (v: boolean) => void;
 
   // settings
   toggleSettings: (v?: boolean) => void;
@@ -161,9 +208,10 @@ export interface AppState {
   setShortcut: (actionId: string, combo: string) => void;
   resetShortcuts: () => void;
   setStt: (patch: Partial<SttSettings>) => void;
+  setLang: (lang: UiLang) => void;
 
   // workspaces
-  addWorkspace: (opts?: { cwd?: string; name?: string }) => string;
+  addWorkspace: (opts?: { cwd?: string; name?: string; focusFilter?: FocusFilter }) => string;
   removeWorkspace: (id: string) => void;
   openNewWorkspace: () => void;
   closeNewWorkspace: () => void;
@@ -179,6 +227,10 @@ export interface AppState {
   addPane: (kind: Exclude<PaneKind, "terminal">, opts?: Partial<WindowItem>) => string;
   removeWindow: (id: string) => void;
   updateWindow: (id: string, patch: Partial<WindowItem>) => void;
+  /** Remove a window from ANY workspace (voice control across spaces). */
+  removeAnyWindow: (id: string) => void;
+  /** Patch a window in ANY workspace (voice control across spaces). */
+  updateAnyWindow: (id: string, patch: Partial<WindowItem>) => void;
   moveWindow: (id: string, x: number, y: number) => void;
   resizeWindow: (id: string, w: number, h: number, x?: number, y?: number) => void;
   reorderWindows: (idsInOrder: string[]) => void;
@@ -188,6 +240,8 @@ export interface AppState {
   setLastActiveTerminal: (id: string) => void;
   toggleGrid: (v?: boolean) => void;
   setFocusMode: (v?: boolean) => void;
+  /** Set the ACTIVE workspace's focus-mode pane filter (persisted per space). */
+  setFocusFilter: (filter: FocusFilter) => void;
   tileActive: () => void;
 
   // conversation resume (across app restarts)
@@ -227,13 +281,13 @@ const mapWindow = (w: Workspace, id: string, patch: (win: WindowItem) => WindowI
   windows: w.windows.map((win) => (win.id === id ? patch(win) : win)),
 });
 
-const initial = makeWorkspace("main");
-
 export const useStore = create<AppState>()(
   persist(
     (set) => ({
-      workspaces: [initial],
-      activeId: initial.id,
+      // Start empty: the first launch forces the "Nouveau workspace" picker
+      // (see App.tsx) instead of auto-creating a default "main" workspace.
+      workspaces: [],
+      activeId: "",
       fullscreenId: null,
       focusMode: false,
       focusByWorkspace: {},
@@ -244,6 +298,14 @@ export const useStore = create<AppState>()(
       lastActiveTerminalId: null,
       settings: DEFAULT_SETTINGS,
       resumeDismissed: false,
+      onboardingDone: false,
+      onboardingPractice: false,
+
+      completeOnboarding: () => set({ onboardingDone: true, onboardingPractice: false }),
+      // Replay the wizard from Settings: close the panel and re-open onboarding.
+      // The folder step is skipped when a workspace already exists (see Onboarding).
+      restartOnboarding: () => set({ onboardingDone: false, showSettings: false }),
+      setOnboardingPractice: (v) => set({ onboardingPractice: v }),
 
       toggleSettings: (v) => set((s) => ({ showSettings: v ?? !s.showSettings })),
 
@@ -283,10 +345,13 @@ export const useStore = create<AppState>()(
       setStt: (patch) =>
         set((s) => ({ settings: { ...s.settings, stt: { ...s.settings.stt, ...patch } } })),
 
+      setLang: (lang) => set((s) => ({ settings: { ...s.settings, lang } })),
+
       addWorkspace: (opts) => {
         const ws = makeWorkspace(
           opts?.name ?? baseName(opts?.cwd),
           opts?.cwd ?? undefined,
+          opts?.focusFilter,
         );
         // Fall back to a numbered name only when nothing was derivable.
         set((s) => ({
@@ -409,6 +474,26 @@ export const useStore = create<AppState>()(
       updateWindow: (id, patch) =>
         set((s) => mapActive(s, (w) => mapWindow(w, id, (win) => ({ ...win, ...patch })))),
 
+      // Cross-workspace variants — voice control acts on a terminal by name even
+      // when it lives in another (non-active) workspace; its PTY runs regardless.
+      removeAnyWindow: (id) =>
+        set((s) => ({
+          workspaces: s.workspaces.map((w) => ({
+            ...w,
+            windows: w.windows.filter((win) => win.id !== id),
+          })),
+          fullscreenId: s.fullscreenId === id ? null : s.fullscreenId,
+          lastActiveTerminalId: s.lastActiveTerminalId === id ? null : s.lastActiveTerminalId,
+        })),
+
+      updateAnyWindow: (id, patch) =>
+        set((s) => ({
+          workspaces: s.workspaces.map((w) => ({
+            ...w,
+            windows: w.windows.map((win) => (win.id === id ? { ...win, ...patch } : win)),
+          })),
+        })),
+
       moveWindow: (id, x, y) =>
         set((s) => mapActive(s, (w) => mapWindow(w, id, (win) => ({ ...win, x, y })))),
 
@@ -462,6 +547,9 @@ export const useStore = create<AppState>()(
           };
         }),
 
+      setFocusFilter: (filter) =>
+        set((s) => mapActive(s, (w) => ({ ...w, focusFilter: filter }))),
+
       tileActive: () => set((s) => mapActive(s, (w) => retile(w))),
 
       // "Tout reprendre": flag every resumable agent to auto-spawn; spawnNew then
@@ -491,10 +579,10 @@ export const useStore = create<AppState>()(
       name: "vato-cnvs",
       version: 4,
       migrate: (persisted: any, version: number) => {
-        // Pre-v2 shapes are incompatible — start fresh.
+        // Pre-v2 shapes are incompatible — start fresh (no workspace; the
+        // "Nouveau workspace" picker is forced on next launch, see App.tsx).
         if (!persisted || version < 2) {
-          const ws = makeWorkspace("main");
-          return { workspaces: [ws], activeId: ws.id, settings: DEFAULT_SETTINGS };
+          return { workspaces: [], activeId: "", settings: DEFAULT_SETTINGS };
         }
         // v2 -> v3: windows are now COUPLED to the viewport (scene coords + zoom).
         // Old x/y came from the removed winPan/screen model, so reset each
@@ -524,6 +612,7 @@ export const useStore = create<AppState>()(
       partialize: (s) => ({
         activeId: s.activeId,
         settings: s.settings,
+        onboardingDone: s.onboardingDone,
         workspaces: s.workspaces.map((w) => ({
           ...w,
           windows: w.windows.map((win) => ({
@@ -542,10 +631,14 @@ export const useStore = create<AppState>()(
         return {
           ...current,
           ...p,
+          // Users who already have workspaces predate the onboarding flag — treat
+          // them as onboarded so the wizard never interrupts an established setup.
+          onboardingDone: p.onboardingDone ?? (p.workspaces?.length ?? 0) > 0,
           settings: {
             cli: settings.cli ?? {},
             shortcuts: { ...DEFAULT_SHORTCUTS, ...(settings.shortcuts ?? {}) },
             stt: { ...DEFAULT_STT, ...(settings.stt ?? {}) },
+            lang: settings.lang ?? DEFAULT_SETTINGS.lang,
           },
         };
       },

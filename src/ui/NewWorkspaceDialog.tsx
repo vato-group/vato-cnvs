@@ -1,74 +1,32 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useStore, useActiveWorkspace, baseName } from "../store";
-import { listDir, type DirListing } from "../pty";
-import { ArrowLeftIcon, CloseIcon, FolderIcon, RefreshIcon } from "./icons";
-
-/** Path separator inferred from a path (Windows backslash vs POSIX slash). */
-const sepOf = (p: string) => (p.includes("\\") ? "\\" : "/");
-
-/** Join a child name onto a directory path using its own separator. */
-function joinPath(base: string, name: string) {
-  return base.replace(/[\\/]+$/, "") + sepOf(base) + name;
-}
-
-/** Is this an absolute path (drive letter, POSIX root, or UNC share)? */
-const isAbsolute = (p: string) => /^[a-zA-Z]:/.test(p) || p.startsWith("/") || p.startsWith("\\\\");
-
-/** Clickable breadcrumb segments, each carrying the path to navigate to. */
-function crumbs(p: string): { seg: string; target: string }[] {
-  const sep = sepOf(p);
-  const unixRoot = p.startsWith("/");
-  const parts = p.split(/[\\/]+/).filter(Boolean);
-  return parts.map((seg, i) => {
-    let target = parts.slice(0, i + 1).join(sep);
-    if (unixRoot) target = "/" + target;
-    // A bare drive letter ("C:") needs a trailing separator to resolve as a root.
-    if (i === 0 && /^[a-zA-Z]:$/.test(seg)) target = seg + sep;
-    return { seg, target };
-  });
-}
+import { useEffect, useState } from "react";
+import { useStore, baseName } from "../store";
+import type { DirListing } from "../pty";
+import type { FocusFilter } from "../types";
+import { useT } from "../i18n";
+import { FolderPicker } from "./FolderPicker";
+import { CloseIcon } from "./icons";
 
 /**
- * "Nouveau workspace" — a terminal-flavoured folder picker. Drill into the
- * filesystem by clicking sub-folders, the breadcrumb, or by typing `cd`-style
- * commands (`cd nom`, `cd ..`, `ls`, `~`, or a full path). The chosen folder
+ * "Nouveau workspace" — wraps the shared {@link FolderPicker} with the workspace
+ * chrome (name preview, default focus filter, create action). The chosen folder
  * becomes the workspace's cwd and its last segment becomes its name.
  */
-export function NewWorkspaceDialog() {
+export function NewWorkspaceDialog({ forced = false }: { forced?: boolean }) {
+  const t = useT();
   const addWorkspace = useStore((s) => s.addWorkspace);
   const close = useStore((s) => s.closeNewWorkspace);
-  // Start from the active workspace's folder so the picker opens where you are.
-  const activeCwd = useActiveWorkspace().cwd;
+  // Start from the active workspace's folder so the picker opens where you are
+  // (undefined on first run when there is no workspace yet → falls back to home).
+  const activeCwd = useStore((s) => s.workspaces.find((w) => w.id === s.activeId)?.cwd);
 
   const [path, setPath] = useState("");
   const [listing, setListing] = useState<DirListing | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [cmd, setCmd] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
+  // Default focus-mode pane filter for the new space (changeable later in focus).
+  const [focusFilter, setFocusFilter] = useState<FocusFilter>("all");
 
-  const go = useCallback((target?: string) => {
-    setLoading(true);
-    setError(null);
-    listDir(target)
-      .then((l) => {
-        setListing(l);
-        setPath(l.path);
-      })
-      .catch((e) => setError(String(e)))
-      .finally(() => setLoading(false));
-  }, []);
-
-  // Open on the active workspace's folder, falling back to the home directory.
+  // Esc closes. When forced (first run), the dialog can't be dismissed.
   useEffect(() => {
-    go(activeCwd);
-    // Only run on mount: capture the active cwd as it was when the dialog opened.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [go]);
-
-  // Esc closes; keep the command line focused.
-  useEffect(() => {
-    inputRef.current?.focus();
+    if (forced) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
@@ -77,123 +35,77 @@ export function NewWorkspaceDialog() {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [close]);
-
-  const runCmd = () => {
-    const raw = cmd.trim();
-    setCmd("");
-    if (!raw) return;
-    const lower = raw.toLowerCase();
-    if (lower === "ls" || lower === "dir") return go(path);
-    if (lower === "~" || lower === "home" || lower === "cd" || lower === "cd ~") return go(undefined);
-
-    let target = lower.startsWith("cd ") ? raw.slice(3).trim() : raw;
-    target = target.replace(/^["']|["']$/g, ""); // strip surrounding quotes
-    if (target === "..") return go(listing?.parent ?? path);
-    if (target === ".") return go(path);
-    go(isAbsolute(target) ? target : joinPath(path, target));
-  };
+  }, [close, forced]);
 
   const name = baseName(path) ?? "workspace";
-  const parent = listing?.parent ?? null;
-  const segs = path ? crumbs(path) : [];
 
   return (
-    <div className="vato-newws-overlay" onMouseDown={() => close()}>
+    <div className="vato-newws-overlay" onMouseDown={() => !forced && close()}>
       <div className="vato-newws" onMouseDown={(e) => e.stopPropagation()}>
         <div className="vato-newws-head">
           <div>
-            <h2>Nouveau workspace</h2>
-            <p>Choisissez le dossier racine du projet — il donnera son nom au workspace.</p>
+            <h2>{forced ? t("newws.welcomeTitle") : t("newws.title")}</h2>
+            <p>{forced ? t("newws.welcomeDesc") : t("newws.desc")}</p>
           </div>
-          <button className="vato-tb-btn" onClick={() => close()} title="Fermer (Esc)">
-            <CloseIcon size={16} />
-          </button>
-        </div>
-
-        {/* Breadcrumb of the current location. */}
-        <div className="vato-newws-crumbs">
-          {segs.map((c, i) => (
-            <span key={c.target + i} className="crumb">
-              <button onClick={() => go(c.target)}>{c.seg}</button>
-              {i < segs.length - 1 && <span className="sep">{sepOf(path)}</span>}
-            </span>
-          ))}
-          <button className="vato-newws-refresh" onClick={() => go(path)} title="Rafraîchir">
-            <RefreshIcon size={13} />
-          </button>
-        </div>
-
-        {/* Directory listing (terminal-style). */}
-        <div className="vato-newws-list">
-          {parent && (
-            <button className="vato-newws-row up" onClick={() => go(parent)}>
-              <ArrowLeftIcon size={15} />
-              <span className="nm">..</span>
-              <span className="hint">dossier parent</span>
+          {!forced && (
+            <button className="vato-tb-btn" onClick={() => close()} title={t("settings.closeEsc")}>
+              <CloseIcon size={16} />
             </button>
           )}
-          {loading && <div className="vato-newws-empty">Chargement…</div>}
-          {error && <div className="vato-newws-err">{error}</div>}
-          {!loading && !error && listing?.entries.length === 0 && (
-            <div className="vato-newws-empty">Aucun sous-dossier ici.</div>
-          )}
-          {!loading &&
-            !error &&
-            listing?.entries.map((e) => (
-              <button
-                key={e.name}
-                className="vato-newws-row"
-                onClick={() => go(joinPath(path, e.name))}
-                onDoubleClick={() => go(joinPath(path, e.name))}
-              >
-                <FolderIcon size={15} />
-                <span className="nm">{e.name}</span>
-              </button>
-            ))}
         </div>
 
-        {/* Fake `cd` command line. */}
-        <div className="vato-newws-cmd">
-          <span className="prompt">›</span>
-          <input
-            ref={inputRef}
-            className="allow-select"
-            placeholder="cd nom_du_dossier · cd .. · ls · ~ · chemin complet"
-            spellCheck={false}
-            autoComplete="off"
-            value={cmd}
-            onChange={(e) => setCmd(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                runCmd();
-              }
-            }}
-          />
+        <FolderPicker
+          initialCwd={activeCwd}
+          onChange={(p, l) => {
+            setPath(p);
+            setListing(l);
+          }}
+        />
+
+        {/* Default focus-mode pane filter for this space (per workspace, editable later). */}
+        <div className="vato-newws-focus">
+          <span className="lbl">{t("newws.focusLabel")}</span>
+          <div className="vato-focus-filter" role="group" aria-label={t("newws.focusAria")}>
+            {([
+              ["all", t("common.all")],
+              ["agents", t("common.agents")],
+              ["terminals", t("common.terminals")],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={`vato-seg ${focusFilter === value ? "on" : ""}`}
+                onClick={() => setFocusFilter(value as FocusFilter)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="vato-newws-foot">
           <div className="vato-newws-target">
-            <span className="lbl">Dossier&nbsp;:</span>
+            <span className="lbl">{t("newws.folder")}</span>
             <code>{path || "—"}</code>
             {listing && (
               <span className="meta">
-                {listing.entries.length} dossier{listing.entries.length > 1 ? "s" : ""} ·{" "}
-                {listing.file_count} fichier{listing.file_count > 1 ? "s" : ""}
+                {t("newws.dirs", { n: listing.entries.length })} ·{" "}
+                {t("newws.files", { n: listing.file_count })}
               </span>
             )}
           </div>
           <div className="vato-newws-actions">
-            <button className="vato-resume-btn ghost" onClick={() => close()}>
-              Annuler
-            </button>
+            {!forced && (
+              <button className="vato-resume-btn ghost" onClick={() => close()}>
+                {t("common.cancel")}
+              </button>
+            )}
             <button
               className="vato-resume-btn primary"
-              disabled={!path || loading}
-              onClick={() => addWorkspace({ cwd: path, name })}
+              disabled={!path}
+              onClick={() => addWorkspace({ cwd: path, name, focusFilter })}
             >
-              Créer «&nbsp;{name}&nbsp;»
+              {t("newws.create", { name })}
             </button>
           </div>
         </div>

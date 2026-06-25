@@ -1,168 +1,169 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useStore, useActiveWorkspace } from "../store";
-import { CLIS } from "../data/clis";
-import type { SttEngine, VoiceMode } from "../types";
-import { useVoice, injectToTerminal } from "../voice/useVoice";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useStore } from "../store";
+import type { VoiceMode } from "../types";
+import { useVoice } from "../voice/useVoice";
+import { runVoiceCommand } from "../voice/commands";
+import { speak } from "../voice/speak";
+import { stripWakeWord } from "../voice/wake";
+import { bus } from "../lib/bus";
+import { humanizeCombo } from "../canvas/shortcuts";
+import { useT } from "../i18n";
 import { Dropdown } from "./Dropdown";
-import { MicIcon, ChevronDownIcon, SendIcon, SettingsIcon } from "./icons";
-
-const ENGINE_LABEL: Record<SttEngine, string> = {
-  whisper: "Whisper turbo",
-  parakeet: "Parakeet v2",
-  openai: "OpenAI cloud",
-};
-const MODE_LABEL: Record<VoiceMode, string> = {
-  ptt: "Maintenir pour parler",
-  continuous: "Écoute continue",
-};
+import { MicIcon, SendIcon, SettingsIcon } from "./icons";
 
 export function VoiceBar() {
+  const t = useT();
   const stt = useStore((s) => s.settings.stt);
   const setStt = useStore((s) => s.setStt);
   const openSettings = useStore((s) => s.openSettings);
-  const lastActive = useStore((s) => s.lastActiveTerminalId);
-  const ws = useActiveWorkspace();
+  const micCombo = useStore((s) => s.settings.shortcuts["voice.mic"]);
 
-  const terminals = useMemo(
-    () => ws.windows.filter((w) => w.kind === "terminal"),
-    [ws.windows],
-  );
+  const MODE_LABEL: Record<VoiceMode, string> = {
+    ptt: t("voice.modePtt"),
+    continuous: t("voice.modeContinuous"),
+  };
 
-  const [targetId, setTargetId] = useState<string | null>(null);
   const [text, setText] = useState("");
+  // Voice-command interpreter state.
+  const [cmdBusy, setCmdBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  // The recognized phrase + the actions actually executed (feedback / debugging).
+  const [heard, setHeard] = useState<string | null>(null);
+  const [steps, setSteps] = useState<string[]>([]);
 
-  // Keep a valid target: prefer explicit pick, else last-active, else first terminal.
-  useEffect(() => {
-    const ids = terminals.map((t) => t.id);
-    setTargetId((cur) => {
-      if (cur && ids.includes(cur)) return cur;
-      if (lastActive && ids.includes(lastActive)) return lastActive;
-      return ids[0] ?? null;
-    });
-  }, [terminals, lastActive]);
-
-  const target = terminals.find((t) => t.id === targetId) ?? null;
   const textRef = useRef(text);
   textRef.current = text;
 
+  // Run a spoken/typed phrase through the command interpreter.
+  const runCommand = (phrase: string) => {
+    const p = phrase.trim();
+    if (!p) return;
+    setResult(null);
+    setSteps([]);
+    setHeard(p);
+    setCmdBusy(true);
+    voice.setError(null);
+    runVoiceCommand(p)
+      .then((r) => {
+        setSteps(r.steps);
+        if (r.error) voice.setError(r.error);
+        else {
+          const summary = r.summary || t("voice.done");
+          setResult(summary);
+          void speak(summary); // no-op unless TTS is enabled
+        }
+      })
+      .catch((e) => voice.setError(String(e)))
+      .finally(() => setCmdBusy(false));
+  };
+
+  // Spoken utterance → command. In continuous mode with a wake word required,
+  // only act on utterances that start with it (strip it first); ambient speech
+  // without the wake word is ignored. PTT always acts (the hold is the intent).
   const voice = useVoice((segment) => {
-    if (stt.directInsert && targetId) {
-      injectToTerminal(targetId, `${segment} `, false).catch((e) => voice.setError(String(e)));
+    if (stt.mode === "continuous" && stt.requireWakeWord) {
+      const cmd = stripWakeWord(segment, stt.wakeWord);
+      if (!cmd) return;
+      runCommand(cmd);
     } else {
-      setText((prev) => (prev ? `${prev} ${segment}` : segment));
+      runCommand(segment);
     }
   });
 
+  // Auto-dismiss the result banner so the bar tucks back away in focus mode.
+  useEffect(() => {
+    if (!result) return;
+    const timer = window.setTimeout(() => setResult(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [result]);
+
+  // Fade the recognized transcript shortly after the command settles.
+  useEffect(() => {
+    if (!heard || cmdBusy) return;
+    const timer = window.setTimeout(() => setHeard(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [heard, cmdBusy]);
+
   const send = () => {
     const t = textRef.current.trim();
-    if (!t || !targetId) return;
-    injectToTerminal(targetId, t, true)
-      .then(() => setText(""))
-      .catch((e) => voice.setError(String(e)));
+    if (!t) return;
+    runCommand(t);
+    setText("");
   };
 
   const isPtt = stt.mode === "ptt";
   const micActive = voice.active;
-  const busy = voice.status === "transcribing";
-  // The engine needs a model/binary before it can transcribe. Until then the
-  // mic is gated: clicking it jumps to the Vocal settings to install one.
-  const ready = !!voice.engine?.ready;
+  const busy = voice.status === "transcribing" || cmdBusy;
+  // The cloud engine needs an OpenAI key. Until then the mic is gated: clicking
+  // it jumps to the Vocal settings to paste one.
+  const ready = voice.ready;
   const notReady = !ready;
+
+  // Keyboard-shortcut entry point (voice.mic): a simple start/stop toggle in both
+  // trigger modes — a key press can't model a "hold", so it acts as a switch.
+  const toggleMic = useCallback(() => {
+    if (notReady) return openSettings("voice");
+    if (voice.active) voice.stop();
+    else voice.start();
+  }, [notReady, openSettings, voice]);
+  const toggleRef = useRef(toggleMic);
+  toggleRef.current = toggleMic;
+  useEffect(() => bus.on("voice:toggle", () => toggleRef.current()), []);
 
   const micHandlers = notReady
     ? { onClick: () => openSettings("voice") }
     : isPtt
       ? {
-          onPointerDown: () => voice.start(),
-          onPointerUp: () => voice.stop(),
-          onPointerLeave: () => micActive && voice.stop(),
+          // Capture the pointer so the whole "hold" is one utterance: without it,
+          // the mouse drifting off the button mid-sentence fires pointerleave and
+          // cuts the command short. We stop ONLY on release.
+          onPointerDown: (e: React.PointerEvent) => {
+            e.currentTarget.setPointerCapture?.(e.pointerId);
+            voice.start();
+          },
+          onPointerUp: (e: React.PointerEvent) => {
+            e.currentTarget.releasePointerCapture?.(e.pointerId);
+            voice.stop();
+          },
         }
       : { onClick: () => (micActive ? voice.stop() : voice.start()) };
 
   const placeholder = notReady
-    ? "Téléchargez d'abord un modèle — cliquez le micro pour ouvrir les réglages"
-    : !target
-      ? "Ouvrez un terminal pour y dicter…"
-      : isPtt
-        ? `Maintenez le micro et parlez → ${target.title}`
-        : micActive
-          ? `À l'écoute… → ${target.title}`
-          : `Cliquez le micro pour parler → ${target.title}`;
+    ? t("voice.placeholderNoKey")
+    : cmdBusy
+      ? t("voice.placeholderBusy")
+      : micActive
+        ? t("voice.placeholderListening")
+        : t("voice.placeholderIdle");
+
+  // Mic tooltip + its live keyboard shortcut.
+  const micKbd = micCombo ? humanizeCombo(micCombo) : "";
+  const micBase = notReady
+    ? t("voice.micNoKey")
+    : isPtt
+      ? t("voice.modePtt")
+      : micActive
+        ? t("voice.micStop")
+        : t("voice.modeContinuous");
+  const micTitle = micKbd ? `${micBase} · ${micKbd}` : micBase;
+
+  // In zen/focus mode the bar tucks to the bottom edge; force it on-screen while
+  // anything voice-related is happening (or there's feedback to read).
+  const reveal = micActive || busy || !!result || !!heard || !!voice.error;
 
   return (
-    <div className="vato-voicebar">
+    <div className={`vato-voicebar ${reveal ? "reveal" : ""}`}>
       <button
         className={`vato-voice-mic ${micActive ? "live" : ""} ${busy ? "busy" : ""} ${
           notReady ? "needs-setup" : ""
         }`}
-        title={
-          notReady
-            ? "Aucun modèle — ouvrir les réglages vocaux"
-            : isPtt
-              ? "Maintenir pour parler"
-              : micActive
-                ? "Arrêter l'écoute"
-                : "Écoute continue"
-        }
+        title={micTitle}
         style={{ ["--lvl" as string]: String(voice.level) } as React.CSSProperties}
         {...micHandlers}
       >
         <MicIcon size={16} />
         {micActive && <span className="vato-voice-ring" />}
       </button>
-
-      {/* Target terminal selector */}
-      <Dropdown
-        align="left"
-        direction="up"
-        width={220}
-        trigger={(open) => (
-          <button className={`vato-voice-target ${open ? "on" : ""}`} title="Terminal cible">
-            {target ? (
-              <>
-                {target.cli && (
-                  <span style={{ color: CLIS[target.cli].color, display: "flex" }}>
-                    {(() => {
-                      const Icon = CLIS[target.cli].Icon;
-                      return <Icon size={13} />;
-                    })()}
-                  </span>
-                )}
-                <span className="nm">{target.title}</span>
-              </>
-            ) : (
-              <span className="nm dim">Aucun terminal</span>
-            )}
-            <ChevronDownIcon size={12} />
-          </button>
-        )}
-      >
-        {(close) => (
-          <div className="vato-menu">
-            <div className="vato-menu-label">Écrire dans…</div>
-            {terminals.length === 0 && <div className="vato-menu-empty">Aucun terminal ouvert</div>}
-            {terminals.map((t) => {
-              const Icon = t.cli ? CLIS[t.cli].Icon : CLIS.shell.Icon;
-              const color = t.cli ? CLIS[t.cli].color : CLIS.shell.color;
-              return (
-                <button
-                  key={t.id}
-                  className={`vato-menu-item ${t.id === targetId ? "on" : ""}`}
-                  onClick={() => {
-                    setTargetId(t.id);
-                    close();
-                  }}
-                >
-                  <span style={{ color, display: "flex" }}>
-                    <Icon size={14} />
-                  </span>
-                  {t.title}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </Dropdown>
 
       <input
         className="vato-voice-input allow-select"
@@ -179,14 +180,16 @@ export function VoiceBar() {
       />
 
       {text.trim() && (
-        <button className="vato-voice-send" title="Envoyer au terminal (Entrée)" onClick={send}>
+        <button className="vato-voice-send" title={`${t("voice.send")} · ${t("kbd.enter")}`} onClick={send}>
           <SendIcon size={15} />
         </button>
       )}
 
-      {voice.status === "transcribing" && <span className="vato-voice-tag">Transcription…</span>}
+      {busy && (
+        <span className="vato-voice-tag">{cmdBusy ? t("voice.tagCommand") : t("voice.tagTranscription")}</span>
+      )}
 
-      {/* Engine / mode quick settings */}
+      {/* Trigger-mode quick settings */}
       <Dropdown
         align="right"
         direction="up"
@@ -194,27 +197,14 @@ export function VoiceBar() {
         trigger={(open) => (
           <button
             className={`vato-voice-gear ${open ? "on" : ""} ${notReady ? "warn" : ""}`}
-            title="Réglages vocaux"
+            title={t("voice.settings")}
           >
             <SettingsIcon size={15} />
           </button>
         )}
       >
         <div className="vato-menu">
-          <div className="vato-menu-label">Moteur</div>
-          <div className="vato-seg">
-            {(["whisper", "parakeet", "openai"] as SttEngine[]).map((e) => (
-              <button
-                key={e}
-                className={`vato-seg-btn ${stt.engine === e ? "on" : ""}`}
-                onClick={() => setStt({ engine: e })}
-              >
-                {ENGINE_LABEL[e]}
-              </button>
-            ))}
-          </div>
-
-          <div className="vato-menu-label">Déclenchement</div>
+          <div className="vato-menu-label">{t("voice.trigger")}</div>
           <div className="vato-seg">
             {(["ptt", "continuous"] as VoiceMode[]).map((m) => (
               <button
@@ -227,29 +217,85 @@ export function VoiceBar() {
             ))}
           </div>
 
-          <button
-            className={`vato-menu-item toggle ${stt.directInsert ? "on" : ""}`}
-            onClick={() => setStt({ directInsert: !stt.directInsert })}
+          <div className="vato-menu-label" style={{ marginTop: 10 }}>
+            {t("voice.micDevice")}
+          </div>
+          <select
+            className="vato-input allow-select"
+            value={stt.micDeviceId}
+            onClick={() => void voice.refreshDevices()}
+            onChange={(e) => setStt({ micDeviceId: e.target.value })}
           >
-            <span className={`vato-tick ${stt.directInsert ? "on" : ""}`} />
-            Insertion directe dans le terminal
-          </button>
+            <option value="">{t("voice.micDefault")}</option>
+            {voice.devices.map((d, i) => (
+              <option key={d.deviceId} value={d.deviceId}>
+                {d.label || t("voice.micUnnamed", { n: i + 1 })}
+              </option>
+            ))}
+          </select>
 
-          <div className={`vato-voice-engine-state ${voice.engine?.ready ? "ok" : "warn"}`}>
-            {voice.engine?.ready
-              ? `${ENGINE_LABEL[stt.engine]} prêt`
-              : voice.engine?.note ?? "Vérification du moteur…"}
+          <div className={`vato-voice-engine-state ${ready ? "ok" : "warn"}`}>
+            {ready ? t("voice.engineReady") : t("voice.engineNoKey")}
           </div>
 
           <button className="vato-menu-item" onClick={() => openSettings("voice")}>
-            <SettingsIcon size={14} /> Réglages vocaux complets…
+            <SettingsIcon size={14} /> {t("voice.fullSettings")}
           </button>
         </div>
       </Dropdown>
 
+      {/* Recognized transcript — shows what the mic actually heard. */}
+      {heard && (busy || result || voice.error) && (
+        <div className="vato-voice-heard" title={heard}>
+          🗣 {heard}
+        </div>
+      )}
+
+      {result && !voice.error && (
+        <div
+          className="vato-voice-result"
+          onClick={() => setResult(null)}
+          title={steps.length ? steps.join(" · ") : t("voice.hide")}
+        >
+          {result}
+        </div>
+      )}
+
       {voice.error && (
-        <div className="vato-voice-error" onClick={() => voice.setError(null)} title="Masquer">
+        <div className="vato-voice-error" onClick={() => voice.setError(null)} title={t("voice.hide")}>
           {voice.error}
+        </div>
+      )}
+
+      {/* Quick mic switch — surfaced on any mic error so the user can pick a
+          working input without digging into settings. */}
+      {voice.error && voice.devices.length > 0 && (
+        <div className="vato-voice-micswitch" onClick={(e) => e.stopPropagation()}>
+          <select
+            className="vato-input allow-select"
+            value={stt.micDeviceId}
+            onClick={() => void voice.refreshDevices()}
+            onChange={(e) => {
+              setStt({ micDeviceId: e.target.value });
+              voice.setError(null);
+            }}
+          >
+            <option value="">{t("voice.micDefault")}</option>
+            {voice.devices.map((d, i) => (
+              <option key={d.deviceId} value={d.deviceId}>
+                {d.label || t("voice.micUnnamed", { n: i + 1 })}
+              </option>
+            ))}
+          </select>
+          <button
+            className="vato-mini-btn"
+            onClick={() => {
+              voice.setError(null);
+              void voice.start();
+            }}
+          >
+            {t("voice.micRetry")}
+          </button>
         </div>
       )}
     </div>

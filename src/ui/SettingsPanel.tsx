@@ -1,134 +1,48 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+﻿import { useEffect, useState, type ReactNode } from "react";
 import { useStore } from "../store";
 import { CLIS, CLI_ORDER, buildCliArgs } from "../data/clis";
+import { BG_IMAGES, BG_PRESETS, BG_VIDEOS, type BgTemplate } from "../data/backgrounds";
 import { ACTION_DEFS, comboFromEvent, humanizeCombo } from "../canvas/shortcuts";
-import type { Background, SttEngine, Workspace } from "../types";
+import { LANGS as APP_LANGS, useT } from "../i18n";
+import type { Background, Workspace } from "../types";
 import { homeDir } from "../pty";
-import {
-  sttDownload,
-  sttInstallWhisper,
-  sttPaths,
-  sttStatus,
-  onDownloadProgress,
-  onInstallProgress,
-  type EngineStatus,
-  type SttPaths,
-} from "../voice/stt";
+import { validateKey } from "../voice/stt";
+import { listMicDevices, primeMicPermission, type MicDevice } from "../voice/audio";
 import { TerminalTool } from "./toolIcons";
 import {
   CloseIcon,
   FolderIcon,
+  GlobeIcon,
   InfoIcon,
   KeyboardIcon,
   MicIcon,
   PaletteIcon,
   PlusIcon,
-  RefreshIcon,
   TrashIcon,
 } from "./icons";
 
-const BG_PRESETS = [
-  "radial-gradient(1200px 820px at 72% 8%, #1c2c4d 0%, #0b0d12 62%)",
-  "linear-gradient(160deg, #0f2027, #203a43, #2c5364)",
-  "radial-gradient(900px 720px at 30% 18%, #3a1c4d, #0b0d12 64%)",
-  "linear-gradient(160deg, #1a1a2e, #16213e, #0f3460)",
-  "radial-gradient(1000px 800px at 70% 14%, #14342b, #0b0d12 60%)",
-  "linear-gradient(160deg, #2b1b17, #3a241b, #0b0d12)",
-];
-
-/** A picked background template (image or looping video). */
-interface BgTemplate {
-  label: string;
-  kind: "image" | "video";
-  /** Full-res url applied as the background. */
-  value: string;
-  /** Static thumbnail shown in the gallery. */
-  thumb: string;
-  /** Suggested dark overlay so foreground stays readable. */
-  dim: number;
-}
-
-const uns = (id: string, w: number) =>
-  `https://images.unsplash.com/photo-${id}?q=80&w=${w}&auto=format&fit=crop`;
-
-/** Calm, low-distraction wallpapers (Unsplash, free to use). */
-const BG_IMAGES: BgTemplate[] = (
-  [
-    ["Vallée brumeuse", "1506744038136-46273834b3fb", 0.2],
-    ["Forêt", "1441974231531-c6227db76b6e", 0.25],
-    ["Voie lactée", "1419242902214-272b3f66ee7a", 0.15],
-    ["Aurore boréale", "1483347756197-71ef80e95f73", 0.2],
-    ["Dégradé bleu", "1557683316-973673baf926", 0.1],
-    ["Terre de nuit", "1451187580459-43490279c0fa", 0.15],
-    ["Hautes terres", "1470071459604-3b5ec3a7fe05", 0.25],
-    ["Côte turquoise", "1505142468610-359e7d316be0", 0.2],
-    ["Arbre solitaire", "1502082553048-f009c37129b9", 0.2],
-  ] as const
-).map(([label, id, dim]) => ({
-  label,
-  kind: "image" as const,
-  value: uns(id, 2400),
-  thumb: uns(id, 480),
-  dim,
-}));
-
-/** Looping ambient clips for a focused, alive background (Pexels, free to use). */
-const BG_VIDEOS: BgTemplate[] = [
-  {
-    label: "Vagues",
-    kind: "video",
-    value: "https://videos.pexels.com/video-files/1409899/1409899-uhd_2560_1440_25fps.mp4",
-    thumb: "https://images.pexels.com/videos/1409899/free-video-1409899.jpg",
-    dim: 0.3,
-  },
-  {
-    label: "Forêt vivante",
-    kind: "video",
-    value: "https://videos.pexels.com/video-files/2330708/2330708-hd_1920_1080_24fps.mp4",
-    thumb: "https://images.pexels.com/videos/2330708/free-video-2330708.jpg",
-    dim: 0.35,
-  },
-  {
-    label: "Champ d'étoiles",
-    kind: "video",
-    value: "https://videos.pexels.com/video-files/2611250/2611250-hd_1920_1080_30fps.mp4",
-    thumb: "https://images.pexels.com/videos/2611250/free-video-2611250.jpg",
-    dim: 0.2,
-  },
-  {
-    label: "Montagnes & brume",
-    kind: "video",
-    value: "https://videos.pexels.com/video-files/4763824/4763824-hd_1920_1080_24fps.mp4",
-    thumb: "https://images.pexels.com/videos/4763824/4k-4k50fps-adventure-backpack-4763824.jpeg",
-    dim: 0.3,
-  },
-  {
-    label: "Côte sauvage",
-    kind: "video",
-    value: "https://videos.pexels.com/video-files/4205697/4205697-hd_1920_1080_30fps.mp4",
-    thumb: "https://images.pexels.com/videos/4205697/bay-bay-area-beach-island-beach-shore-4205697.jpeg",
-    dim: 0.3,
-  },
-];
-
+// Sidebar sections. Labels are looked up at render via `settings.sec.<id>` so
+// the panel follows the app language.
 const SECTIONS = [
-  { id: "agents", label: "Agents", Icon: TerminalTool },
-  { id: "voice", label: "Vocal", Icon: MicIcon },
-  { id: "shortcuts", label: "Raccourcis", Icon: KeyboardIcon },
-  { id: "appearance", label: "Apparence", Icon: PaletteIcon },
-  { id: "workspaces", label: "Workspaces", Icon: FolderIcon },
-  { id: "about", label: "À propos", Icon: InfoIcon },
+  { id: "agents", Icon: TerminalTool },
+  { id: "voice", Icon: MicIcon },
+  { id: "language", Icon: GlobeIcon },
+  { id: "shortcuts", Icon: KeyboardIcon },
+  { id: "appearance", Icon: PaletteIcon },
+  { id: "workspaces", Icon: FolderIcon },
+  { id: "about", Icon: InfoIcon },
 ];
 
 /* ----------------------------- Agents ----------------------------- */
 function AgentsSection() {
+  const t = useT();
   const settings = useStore((s) => s.settings);
   const setCliPreset = useStore((s) => s.setCliPreset);
   const setCliExtraArgs = useStore((s) => s.setCliExtraArgs);
 
   return (
     <>
-      <div className="vato-set-h">Commande de lancement par agent</div>
+      <div className="vato-set-h">{t("settings.agents.launchCmd")}</div>
       {CLI_ORDER.map((id) => {
         const def = CLIS[id];
         const cfg = settings.cli[id];
@@ -160,7 +74,7 @@ function AgentsSection() {
             )}
             <input
               className="vato-input allow-select"
-              placeholder="Arguments supplémentaires…"
+              placeholder={t("settings.agents.extraArgs")}
               spellCheck={false}
               value={cfg?.extraArgs ?? ""}
               onChange={(e) => setCliExtraArgs(id, e.target.value)}
@@ -174,372 +88,265 @@ function AgentsSection() {
 }
 
 /* ----------------------------- Voice ------------------------------ */
-interface WhisperModel {
-  id: string;
-  label: string;
-  file: string;
-  url: string;
-  reco?: boolean;
-}
-const WHISPER_MODELS: WhisperModel[] = [
-  {
-    id: "turbo-q5",
-    label: "Large v3 Turbo · q5 (~550 Mo)",
-    file: "ggml-large-v3-turbo-q5_0.bin",
-    url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin",
-    reco: true,
-  },
-  {
-    id: "turbo",
-    label: "Large v3 Turbo · f16 (~1,6 Go)",
-    file: "ggml-large-v3-turbo.bin",
-    url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin",
-  },
-  {
-    id: "base",
-    label: "Base · multilingue (~150 Mo)",
-    file: "ggml-base.bin",
-    url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
-  },
-  {
-    id: "tiny",
-    label: "Tiny · test rapide (~75 Mo)",
-    file: "ggml-tiny.bin",
-    url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin",
-  },
+// Dictation/transcription language codes -> i18n key (distinct from the
+// 3-language UI `LANGS`).
+const DICTATION_LANGS: [string, string][] = [
+  ["auto", "stt.auto"],
+  ["fr", "lang.fr"],
+  ["en", "lang.en"],
+  ["es", "lang.es"],
+  ["de", "lang.de"],
+  ["it", "lang.it"],
+  ["pt", "lang.pt"],
+  ["nl", "lang.nl"],
+  ["ja", "lang.ja"],
+  ["zh", "lang.zh"],
 ];
 
-const LANGS: [string, string][] = [
-  ["auto", "Détection auto"],
-  ["fr", "Français"],
-  ["en", "Anglais"],
-  ["es", "Espagnol"],
-  ["de", "Allemand"],
-  ["it", "Italien"],
-  ["pt", "Portugais"],
-  ["nl", "Néerlandais"],
-  ["ja", "Japonais"],
-  ["zh", "Chinois"],
-];
+const TTS_VOICES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer", "coral", "sage"];
 
 function VoiceSection() {
+  const t = useT();
   const stt = useStore((s) => s.settings.stt);
   const setStt = useStore((s) => s.setStt);
-  const [paths, setPaths] = useState<SttPaths | null>(null);
-  const [status, setStatus] = useState<EngineStatus | null>(null);
-  const [dl, setDl] = useState<{ file: string; pct: number; done: boolean; error: string | null } | null>(
-    null,
-  );
-  const [install, setInstall] = useState<{ pct: number; done: boolean; error: string | null } | null>(
-    null,
-  );
+  const ready = !!stt.openaiKey.trim();
+  const [test, setTest] = useState<{ state: "idle" | "testing" | "ok" | "bad"; msg?: string }>({ state: "idle" });
+  const [devices, setDevices] = useState<MicDevice[]>([]);
 
-  const refresh = useCallback(() => {
-    const s = useStore.getState().settings.stt;
-    if (s.engine === "openai") {
-      const ok = !!s.openaiKey.trim();
-      setStatus({
-        engine: "openai",
-        binary: null,
-        binary_ready: ok,
-        model: s.openaiModel,
-        model_ready: true,
-        ready: ok,
-        note: ok ? null : "Clé API OpenAI manquante",
-      });
-      return;
-    }
-    const bin = s.engine === "whisper" ? s.whisperBinary : s.parakeetBinary;
-    const model = s.engine === "whisper" ? s.whisperModel : "";
-    sttStatus(s.engine, bin, model)
-      .then(setStatus)
-      .catch(() => setStatus(null));
-  }, []);
-
+  // Enumerate mics on open and whenever hardware changes. Labels need a prior
+  // permission grant; the "Détecter" button forces one.
   useEffect(() => {
-    sttPaths().then(setPaths).catch(() => {});
-  }, []);
-  useEffect(() => {
+    let alive = true;
+    const refresh = () => listMicDevices().then((d) => alive && setDevices(d));
     refresh();
-  }, [
-    refresh,
-    stt.engine,
-    stt.whisperBinary,
-    stt.whisperModel,
-    stt.parakeetBinary,
-    stt.openaiKey,
-    stt.openaiModel,
-  ]);
+    navigator.mediaDevices?.addEventListener?.("devicechange", refresh);
+    return () => {
+      alive = false;
+      navigator.mediaDevices?.removeEventListener?.("devicechange", refresh);
+    };
+  }, []);
 
-  useEffect(() => {
-    let un: (() => void) | undefined;
-    onDownloadProgress((p) => {
-      const file = decodeURIComponent(p.url.split("/").pop() || "");
-      setDl((cur) => ({
-        file,
-        pct: p.done ? 100 : p.total ? Math.round((p.received / p.total) * 100) : cur?.pct ?? 0,
-        done: p.done,
-        error: p.error,
-      }));
-      if (p.done && !p.error) refresh();
-    }).then((u) => (un = u));
-    return () => un?.();
-  }, [refresh]);
-
-  useEffect(() => {
-    let un: (() => void) | undefined;
-    onInstallProgress((p) => {
-      setInstall({
-        pct: p.done ? 100 : p.total ? Math.round((p.received / p.total) * 100) : 0,
-        done: p.done,
-        error: p.error,
-      });
-      if (p.done && !p.error) refresh();
-    }).then((u) => (un = u));
-    return () => un?.();
-  }, [refresh]);
-
-  const installBinary = () => {
-    setInstall({ pct: 0, done: false, error: null });
-    sttInstallWhisper()
-      .then(() => {
-        setInstall({ pct: 100, done: true, error: null });
-        refresh();
-      })
-      .catch((e) => setInstall({ pct: 0, done: true, error: String(e) }));
+  const detectMics = async () => {
+    await primeMicPermission();
+    setDevices(await listMicDevices());
   };
 
-  const download = (m: WhisperModel) => {
-    if (!paths) return;
-    const dest = `${paths.models_dir}\\${m.file}`;
-    setDl({ file: m.file, pct: 0, done: false, error: null });
-    sttDownload(m.url, dest)
-      .then(() => {
-        setStt({ whisperModel: dest });
-        refresh();
-      })
-      .catch((e) => setDl({ file: m.file, pct: 0, done: true, error: String(e) }));
+  const runTest = () => {
+    setTest({ state: "testing" });
+    validateKey(stt.openaiKey, stt.commandModel).then((r) =>
+      setTest(r.ok ? { state: "ok" } : { state: "bad", msg: r.error }),
+    );
   };
 
-  const activeModelFile = status?.model?.split(/[\\/]/).pop() ?? "";
-  const downloading = dl && !dl.done ? dl : null;
-  const installing = install && !install.done ? install : null;
+  const statusText =
+    test.state === "testing"
+      ? t("settings.voice.testing")
+      : test.state === "ok"
+        ? t("settings.voice.keyValid")
+        : test.state === "bad"
+          ? t("settings.voice.keyInvalid", { msg: test.msg ?? "" })
+          : ready
+            ? t("settings.voice.keyReady")
+            : t("settings.voice.keyMissing");
+  const statusOk = test.state === "ok" || (test.state === "idle" && ready);
 
   return (
     <>
-      <div className="vato-set-h">Moteur de transcription</div>
-      <div className="vato-seg" style={{ marginBottom: 12 }}>
-        {(["whisper", "parakeet", "openai"] as SttEngine[]).map((e) => (
-          <button
-            key={e}
-            className={`vato-seg-btn ${stt.engine === e ? "on" : ""}`}
-            onClick={() => setStt({ engine: e })}
-          >
-            {e === "whisper" ? "Whisper (local)" : e === "parakeet" ? "Parakeet (local)" : "OpenAI (cloud)"}
-          </button>
-        ))}
+      <div className="vato-set-h">{t("settings.voice.h")}</div>
+      <div className="vato-stt-hint" style={{ marginTop: 2 }}>
+        {t("settings.voice.cloudHint")}
       </div>
 
-      <div className={`vato-stt-status ${status?.ready ? "ok" : "warn"}`}>
+      <div className={`vato-stt-status ${statusOk ? "ok" : "warn"}`} style={{ marginTop: 14 }}>
         <span className="dot" />
-        <span className="txt">{status?.ready ? "Moteur prêt" : status?.note ?? "Vérification…"}</span>
-        <button className="vato-mini-btn" style={{ flex: "0 0 auto" }} onClick={refresh} title="Revérifier">
-          <RefreshIcon size={13} /> Revérifier
+        <span className="txt">{statusText}</span>
+        <button
+          className="vato-mini-btn"
+          style={{ flex: "0 0 auto" }}
+          onClick={runTest}
+          disabled={test.state === "testing" || !ready}
+        >
+          {t("settings.voice.test")}
         </button>
       </div>
 
-      {/* ---- Trigger mode (shared) ---- */}
+      <div className="vato-stt-hint" style={{ marginTop: 6 }}>
+        {t("settings.voice.pilotHint")}
+      </div>
+
+      {/* ---- Microphone device ---- */}
       <div className="vato-menu-label" style={{ marginTop: 16 }}>
-        Déclenchement
+        {t("settings.voice.micDevice")}
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <select
+          className="vato-input allow-select"
+          style={{ flex: 1 }}
+          value={stt.micDeviceId}
+          onChange={(e) => setStt({ micDeviceId: e.target.value })}
+        >
+          <option value="">{t("voice.micDefault")}</option>
+          {devices.map((d, i) => (
+            <option key={d.deviceId} value={d.deviceId}>
+              {d.label || t("voice.micUnnamed", { n: i + 1 })}
+            </option>
+          ))}
+        </select>
+        <button className="vato-mini-btn" style={{ flex: "0 0 auto" }} onClick={detectMics}>
+          {t("settings.voice.micDetect")}
+        </button>
+      </div>
+      <div className="vato-stt-hint" style={{ marginTop: 6 }}>
+        {t("settings.voice.micDeviceHint")}
+      </div>
+
+      {/* ---- Trigger mode ---- */}
+      <div className="vato-menu-label" style={{ marginTop: 16 }}>
+        {t("voice.trigger")}
       </div>
       <div className="vato-seg">
         <button
           className={`vato-seg-btn ${stt.mode === "ptt" ? "on" : ""}`}
           onClick={() => setStt({ mode: "ptt" })}
         >
-          Maintenir pour parler
+          {t("voice.modePtt")}
         </button>
         <button
           className={`vato-seg-btn ${stt.mode === "continuous" ? "on" : ""}`}
           onClick={() => setStt({ mode: "continuous" })}
         >
-          Écoute continue
+          {t("voice.modeContinuous")}
         </button>
       </div>
-      <button
-        className={`vato-menu-item toggle ${stt.directInsert ? "on" : ""}`}
-        style={{ marginTop: 8 }}
-        onClick={() => setStt({ directInsert: !stt.directInsert })}
-      >
-        <span className={`vato-tick ${stt.directInsert ? "on" : ""}`} />
-        Insertion directe — chaque phrase est écrite immédiatement dans le terminal
-      </button>
 
-      {stt.engine === "whisper" ? (
+      {/* ---- Continuous-only: wake word + mic sensitivity ---- */}
+      {stt.mode === "continuous" && (
         <>
-          <div className="vato-menu-label" style={{ marginTop: 16 }}>
-            Langue de dictée
-          </div>
-          <select
-            className="vato-input allow-select"
-            value={stt.lang}
-            onChange={(e) => setStt({ lang: e.target.value })}
+          <button
+            className={`vato-menu-item toggle ${stt.requireWakeWord ? "on" : ""}`}
+            style={{ marginTop: 8 }}
+            onClick={() => setStt({ requireWakeWord: !stt.requireWakeWord })}
           >
-            {LANGS.map(([code, label]) => (
-              <option key={code} value={code}>
-                {label}
-              </option>
-            ))}
-          </select>
-
-          <div className="vato-set-h" style={{ marginTop: 18 }}>
-            Modèles Whisper (GGUF)
-          </div>
-          {WHISPER_MODELS.map((m) => {
-            const active = activeModelFile === m.file;
-            const isDownloading = downloading?.file === m.file;
-            return (
-              <div key={m.id} className="vato-stt-model">
-                <div className="vato-stt-model-row">
-                  <span className="lbl">
-                    {m.label}
-                    {m.reco && <span className="vato-ws-badge" style={{ marginLeft: 8 }}>conseillé</span>}
-                    {active && <span className="vato-ws-badge ok" style={{ marginLeft: 8 }}>actif</span>}
-                  </span>
-                  <button
-                    className="vato-mini-btn"
-                    disabled={!!downloading}
-                    onClick={() => download(m)}
-                  >
-                    {isDownloading ? `${downloading?.pct ?? 0}%` : active ? "Re-télécharger" : "Télécharger"}
-                  </button>
-                </div>
-                {isDownloading && (
-                  <div className="vato-stt-bar">
-                    <span style={{ transform: `scaleX(${(downloading?.pct ?? 0) / 100})` }} />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {dl?.error && <div className="vato-stt-err">Échec : {dl.error}</div>}
-
-          <div className="vato-set-h" style={{ marginTop: 18 }}>
-            Binaire whisper-cli
-          </div>
-          <div className="vato-stt-model">
-            <div className="vato-stt-model-row">
-              <span className="lbl">
-                Installation automatique (x64 + DLL)
-                {status?.binary_ready && (
-                  <span className="vato-ws-badge ok" style={{ marginLeft: 8 }}>
-                    installé
-                  </span>
-                )}
-              </span>
-              <button className="vato-mini-btn" disabled={!!installing} onClick={installBinary}>
-                {installing ? `${install?.pct ?? 0}%` : status?.binary_ready ? "Réinstaller" : "Installer"}
-              </button>
-            </div>
-            {installing && (
-              <div className="vato-stt-bar">
-                <span style={{ transform: `scaleX(${(install?.pct ?? 0) / 100})` }} />
-              </div>
-            )}
-          </div>
-          {install?.error && <div className="vato-stt-err">Échec install : {install.error}</div>}
-
-          <div className="vato-menu-label" style={{ marginTop: 16 }}>
-            Chemin manuel (laisser vide = auto / PATH)
-          </div>
-          <input
-            className="vato-input allow-select"
-            placeholder={paths ? `${paths.whisper_dir}\\whisper-cli.exe` : "Chemin vers whisper-cli.exe"}
-            spellCheck={false}
-            value={stt.whisperBinary}
-            onChange={(e) => setStt({ whisperBinary: e.target.value })}
-          />
-          <div className="vato-menu-label">Modèle (rempli au téléchargement)</div>
-          <input
-            className="vato-input allow-select"
-            placeholder="Chemin vers un .bin GGUF"
-            spellCheck={false}
-            value={stt.whisperModel}
-            onChange={(e) => setStt({ whisperModel: e.target.value })}
-          />
-          <div className="vato-stt-hint">
-            « Installer » télécharge et extrait <code>whisper-cli.exe</code> + ses DLL (release whisper.cpp x64)
-            dans <code>{paths?.whisper_dir ?? "…/stt/whisper"}</code>. Sinon, dépose-les manuellement à cet
-            emplacement ou indique un chemin ci-dessus.
-          </div>
-        </>
-      ) : stt.engine === "openai" ? (
-        <>
-          <div className="vato-menu-label" style={{ marginTop: 16 }}>
-            Clé API OpenAI
-          </div>
-          <input
-            className="vato-input allow-select"
-            type="password"
-            placeholder="sk-…"
-            spellCheck={false}
-            value={stt.openaiKey}
-            onChange={(e) => setStt({ openaiKey: e.target.value })}
-          />
-          <div className="vato-menu-label">Modèle</div>
-          <select
-            className="vato-input allow-select"
-            value={stt.openaiModel}
-            onChange={(e) => setStt({ openaiModel: e.target.value })}
-          >
-            <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe (rapide, conseillé)</option>
-            <option value="gpt-4o-transcribe">gpt-4o-transcribe (qualité max)</option>
-            <option value="whisper-1">whisper-1</option>
-          </select>
-          <div className="vato-menu-label">Langue</div>
-          <select
-            className="vato-input allow-select"
-            value={stt.lang}
-            onChange={(e) => setStt({ lang: e.target.value })}
-          >
-            {LANGS.map(([code, label]) => (
-              <option key={code} value={code}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <div className="vato-stt-hint">
-            Transcription via <code>api.openai.com</code> (appel fait par le backend → pas de CORS). La clé est
-            stockée <b>localement</b> et n'est jamais committée. Si elle a fuité, révoque-la sur
-            platform.openai.com. Nécessite un compte avec du crédit, sinon erreur{" "}
-            <code>insufficient_quota</code>.
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="vato-stt-hint" style={{ marginTop: 16 }}>
-            Parakeet v2 est <b>anglais uniquement</b> et nécessite un sidecar externe (Python/ONNX) qui prend un
-            fichier WAV en argument et imprime le texte. Placez l'exécutable dans{" "}
-            <code>{paths?.parakeet_dir ?? "…/stt/parakeet"}</code> ou indiquez son chemin.
-          </div>
+            <span className={`vato-tick ${stt.requireWakeWord ? "on" : ""}`} />
+            {t("settings.voice.wakeToggle")}
+          </button>
+          {stt.requireWakeWord && (
+            <input
+              className="vato-input allow-select"
+              placeholder={t("settings.voice.wakePlaceholder")}
+              spellCheck={false}
+              value={stt.wakeWord}
+              onChange={(e) => setStt({ wakeWord: e.target.value })}
+              style={{ marginTop: 8 }}
+            />
+          )}
           <div className="vato-menu-label" style={{ marginTop: 12 }}>
-            Sidecar Parakeet
+            {t("settings.voice.micSensitivity", { threshold: stt.vadThreshold.toFixed(3) })}
           </div>
           <input
-            className="vato-input allow-select"
-            placeholder="Chemin vers l'exécutable Parakeet"
-            spellCheck={false}
-            value={stt.parakeetBinary}
-            onChange={(e) => setStt({ parakeetBinary: e.target.value })}
+            type="range"
+            min={0.005}
+            max={0.04}
+            step={0.001}
+            value={stt.vadThreshold}
+            onChange={(e) => setStt({ vadThreshold: parseFloat(e.target.value) })}
+            style={{ width: "100%" }}
           />
         </>
       )}
+
+      {/* ---- Spoken confirmation (TTS) ---- */}
+      <button
+        className={`vato-menu-item toggle ${stt.tts ? "on" : ""}`}
+        style={{ marginTop: 12 }}
+        onClick={() => setStt({ tts: !stt.tts })}
+      >
+        <span className={`vato-tick ${stt.tts ? "on" : ""}`} />
+        {t("settings.voice.ttsToggle")}
+      </button>
+      {stt.tts && (
+        <select
+          className="vato-input allow-select"
+          style={{ marginTop: 8 }}
+          value={stt.ttsVoice}
+          onChange={(e) => setStt({ ttsVoice: e.target.value })}
+        >
+          {TTS_VOICES.map((v) => (
+            <option key={v} value={v}>
+              {t("settings.voice.ttsVoice", { name: v })}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {/* ---- OpenAI credentials & models ---- */}
+      <div className="vato-set-h" style={{ marginTop: 18 }}>
+        {t("settings.voice.keyH")}
+      </div>
+      <input
+        className="vato-input allow-select"
+        type="password"
+        placeholder="sk-…"
+        spellCheck={false}
+        value={stt.openaiKey}
+        onChange={(e) => {
+          setTest({ state: "idle" });
+          setStt({ openaiKey: e.target.value });
+        }}
+      />
+
+      <div className="vato-menu-label" style={{ marginTop: 12 }}>
+        {t("settings.voice.transcriptionModel")}
+      </div>
+      <select
+        className="vato-input allow-select"
+        value={stt.openaiModel}
+        onChange={(e) => setStt({ openaiModel: e.target.value })}
+      >
+        <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe ({t("settings.voice.fast")})</option>
+        <option value="gpt-4o-transcribe">gpt-4o-transcribe ({t("settings.voice.maxQuality")})</option>
+        <option value="whisper-1">whisper-1</option>
+      </select>
+
+      <div className="vato-menu-label" style={{ marginTop: 12 }}>
+        {t("settings.voice.commandModel")}
+      </div>
+      <select
+        className="vato-input allow-select"
+        value={stt.commandModel}
+        onChange={(e) => setStt({ commandModel: e.target.value })}
+      >
+        <option value="gpt-4o-mini">gpt-4o-mini ({t("settings.voice.fast")})</option>
+        <option value="gpt-4o">gpt-4o ({t("settings.voice.maxReasoning")})</option>
+        <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+        <option value="gpt-4.1">gpt-4.1</option>
+      </select>
+
+      <div className="vato-menu-label" style={{ marginTop: 12 }}>
+        {t("settings.voice.dictationLang")}
+      </div>
+      <select
+        className="vato-input allow-select"
+        value={stt.lang}
+        onChange={(e) => setStt({ lang: e.target.value })}
+      >
+        {DICTATION_LANGS.map(([code, key]) => (
+          <option key={code} value={code}>
+            {t(key)}
+          </option>
+        ))}
+      </select>
+
+      <div className="vato-stt-hint" style={{ marginTop: 14 }}>
+        {t("settings.voice.backendHint")}
+      </div>
     </>
   );
 }
 
 /* --------------------------- Shortcuts ---------------------------- */
 function ShortcutsSection() {
+  const t = useT();
   const shortcuts = useStore((s) => s.settings.shortcuts);
   const setShortcut = useStore((s) => s.setShortcut);
   const resetShortcuts = useStore((s) => s.resetShortcuts);
@@ -565,23 +372,23 @@ function ShortcutsSection() {
   return (
     <>
       <div className="vato-set-h">
-        Raccourcis clavier
+        {t("settings.shortcuts.h")}
         <button className="vato-mini-btn" style={{ flex: "0 0 auto" }} onClick={() => resetShortcuts()}>
-          Réinitialiser
+          {t("common.reset")}
         </button>
       </div>
       {groups.map((g) => (
         <div key={g} className="vato-set-group">
-          <div className="vato-menu-label">{g}</div>
+          <div className="vato-menu-label">{t(`group.${g}`)}</div>
           {ACTION_DEFS.filter((a) => a.group === g).map((a) => (
             <div key={a.id} className="vato-set-row">
-              <span className="label">{a.label}</span>
+              <span className="label">{t(`action.${a.id}`)}</span>
               <button
                 className={`vato-kbd ${recording === a.id ? "rec" : ""}`}
                 onClick={() => setRecording(a.id)}
-                title="Cliquer puis appuyer sur la nouvelle combinaison (Échap pour annuler)"
+                title={t("settings.shortcuts.recordHint")}
               >
-                {recording === a.id ? "Appuyez…" : humanizeCombo(shortcuts[a.id] ?? "")}
+                {recording === a.id ? t("settings.shortcuts.press") : humanizeCombo(shortcuts[a.id] ?? "")}
               </button>
             </div>
           ))}
@@ -593,6 +400,7 @@ function ShortcutsSection() {
 
 /* --------------------------- Appearance --------------------------- */
 function AppearanceSection() {
+  const t = useT();
   const workspaces = useStore((s) => s.workspaces);
   const activeId = useStore((s) => s.activeId);
   const setBackground = useStore((s) => s.setBackground);
@@ -601,12 +409,12 @@ function AppearanceSection() {
   const dim = ws.background.dim ?? 0;
 
   const apply = (bg: Background) => setBackground(ws.id, bg);
-  const pick = (t: BgTemplate) => apply({ kind: t.kind, value: t.value, dim: t.dim });
-  const isOn = (t: BgTemplate) => ws.background.kind === t.kind && ws.background.value === t.value;
+  const pick = (tpl: BgTemplate) => apply({ kind: tpl.kind, value: tpl.value, dim: tpl.dim });
+  const isOn = (tpl: BgTemplate) => ws.background.kind === tpl.kind && ws.background.value === tpl.value;
 
   return (
     <>
-      <div className="vato-set-h">Fond du workspace « {ws.name} »</div>
+      <div className="vato-set-h">{t("settings.appearance.bgOf", { name: ws.name })}</div>
       <div className="vato-bg-presets" style={{ marginBottom: 12 }}>
         {BG_PRESETS.map((p, i) => (
           <button
@@ -618,40 +426,40 @@ function AppearanceSection() {
         ))}
       </div>
 
-      <div className="vato-menu-label">Wallpapers — calme & focus</div>
+      <div className="vato-menu-label">{t("settings.appearance.wallpapers")}</div>
       <div className="vato-bg-gallery">
-        {BG_IMAGES.map((t) => (
+        {BG_IMAGES.map((tpl) => (
           <button
-            key={t.value}
-            className={`vato-bg-tile ${isOn(t) ? "on" : ""}`}
-            style={{ backgroundImage: `url("${t.thumb}")` }}
-            title={t.label}
-            onClick={() => pick(t)}
+            key={tpl.value}
+            className={`vato-bg-tile ${isOn(tpl) ? "on" : ""}`}
+            title={t(tpl.labelKey)}
+            onClick={() => pick(tpl)}
           >
-            <span className="vato-bg-tile-label">{t.label}</span>
+            <img src={tpl.thumb} alt="" loading="lazy" draggable={false} />
+            <span className="vato-bg-tile-label">{t(tpl.labelKey)}</span>
           </button>
         ))}
       </div>
 
       <div className="vato-menu-label" style={{ marginTop: 12 }}>
-        Vidéos en boucle — ambiance
+        {t("settings.appearance.videos")}
       </div>
       <div className="vato-bg-gallery">
-        {BG_VIDEOS.map((t) => (
+        {BG_VIDEOS.map((tpl) => (
           <button
-            key={t.value}
-            className={`vato-bg-tile ${isOn(t) ? "on" : ""}`}
-            style={{ backgroundImage: `url("${t.thumb}")` }}
-            title={t.label}
-            onClick={() => pick(t)}
+            key={tpl.value}
+            className={`vato-bg-tile ${isOn(tpl) ? "on" : ""}`}
+            title={t(tpl.labelKey)}
+            onClick={() => pick(tpl)}
           >
+            <img src={tpl.thumb} alt="" loading="lazy" draggable={false} />
             <span className="vato-bg-tile-badge">▶</span>
-            <span className="vato-bg-tile-label">{t.label}</span>
+            <span className="vato-bg-tile-label">{t(tpl.labelKey)}</span>
           </button>
         ))}
       </div>
 
-      <div className="vato-menu-label" style={{ marginTop: 12 }}>Image ou vidéo (URL)</div>
+      <div className="vato-menu-label" style={{ marginTop: 12 }}>{t("settings.appearance.urlLabel")}</div>
       <input
         className="vato-input allow-select"
         placeholder="https://… (.jpg, .png, .mp4)"
@@ -661,17 +469,17 @@ function AppearanceSection() {
       />
       <div className="vato-bg-row">
         <button className="vato-mini-btn" onClick={() => url && apply({ kind: "image", value: url, dim: dim || 0.15 })}>
-          Image
+          {t("settings.appearance.image")}
         </button>
         <button className="vato-mini-btn" onClick={() => url && apply({ kind: "video", value: url, dim: dim || 0.25 })}>
-          Vidéo
+          {t("settings.appearance.video")}
         </button>
         <button className="vato-mini-btn" onClick={() => apply({ ...ws.background, kind: "color", value: BG_PRESETS[0] })}>
-          Réinitialiser
+          {t("common.reset")}
         </button>
       </div>
       <div className="vato-menu-label" style={{ marginTop: 14 }}>
-        Assombrir le fond — {Math.round(dim * 100)}%
+        {t("settings.appearance.dim", { pct: Math.round(dim * 100) })}
       </div>
       <input
         type="range"
@@ -688,6 +496,7 @@ function AppearanceSection() {
 
 /* --------------------------- Workspaces --------------------------- */
 function WorkspaceCard({ ws, active }: { ws: Workspace; active: boolean }) {
+  const t = useT();
   const setActive = useStore((s) => s.setActive);
   const renameWorkspace = useStore((s) => s.renameWorkspace);
   const setWorkspaceCwd = useStore((s) => s.setWorkspaceCwd);
@@ -709,34 +518,33 @@ function WorkspaceCard({ ws, active }: { ws: Workspace; active: boolean }) {
           style={{ marginBottom: 0 }}
         />
         {active ? (
-          <span className="vato-ws-badge">actif</span>
+          <span className="vato-ws-badge">{t("settings.ws.active")}</span>
         ) : (
           <button className="vato-mini-btn" onClick={() => setActive(ws.id)}>
-            Activer
+            {t("settings.ws.activate")}
           </button>
         )}
         {canDelete && (
-          <button className="vato-tb-btn vato-close" title="Supprimer" onClick={() => removeWorkspace(ws.id)}>
+          <button className="vato-tb-btn vato-close" title={t("settings.ws.delete")} onClick={() => removeWorkspace(ws.id)}>
             <TrashIcon size={15} />
           </button>
         )}
       </div>
       <input
         className="vato-input allow-select"
-        placeholder="Dossier de travail (cwd)…"
+        placeholder={t("settings.ws.cwdPlaceholder")}
         value={ws.cwd ?? ""}
         spellCheck={false}
         onChange={(e) => setWorkspaceCwd(ws.id, e.target.value)}
         style={{ marginBottom: 0, marginTop: 8 }}
       />
-      <div className="vato-ws-card-meta">
-        {ws.windows.length} fenêtre{ws.windows.length > 1 ? "s" : ""}
-      </div>
+      <div className="vato-ws-card-meta">{t("grid.windows", { n: ws.windows.length })}</div>
     </div>
   );
 }
 
 function WorkspacesSection() {
+  const t = useT();
   const workspaces = useStore((s) => s.workspaces);
   const activeId = useStore((s) => s.activeId);
   const openNewWorkspace = useStore((s) => s.openNewWorkspace);
@@ -754,7 +562,7 @@ function WorkspacesSection() {
             openNewWorkspace();
           }}
         >
-          <PlusIcon size={13} /> Nouveau
+          <PlusIcon size={13} /> {t("common.new")}
         </button>
       </div>
       {workspaces.map((w) => (
@@ -766,19 +574,61 @@ function WorkspacesSection() {
 
 /* ----------------------------- About ------------------------------ */
 function AboutSection() {
+  const t = useT();
+  const restartOnboarding = useStore((s) => s.restartOnboarding);
+  const settingsCombo = useStore((s) => s.settings.shortcuts["settings.open"]);
   return (
     <>
-      <div className="vato-set-h">À propos</div>
+      <div className="vato-set-h">{t("settings.sec.about")}</div>
       <div className="vato-about">
         <img className="vato-about-logo" src="/logo.png" alt="Vato Canvas" draggable={false} />
         <div className="vato-about-title">Vato Canvas</div>
-        <div className="vato-about-sub">
-          Cockpit multi-agents sur canvas infini — pilotez plusieurs CLI d'IA, un navigateur intégré et un
-          tableau blanc, en fenêtres tuilées.
+        <div className="vato-about-sub">{t("settings.about.tagline")}</div>
+        <div className="vato-about-row"><span>{t("settings.about.version")}</span><b>0.1.0</b></div>
+        <div className="vato-about-row"><span>{t("settings.about.stack")}</span><b>Tauri v2 · React · Excalidraw · xterm</b></div>
+        <div className="vato-about-row">
+          <span>{t("settings.about.settingsShortcut")}</span>
+          <b>{settingsCombo ? humanizeCombo(settingsCombo) : "—"}</b>
         </div>
-        <div className="vato-about-row"><span>Version</span><b>0.1.0</b></div>
-        <div className="vato-about-row"><span>Stack</span><b>Tauri v2 · React · Excalidraw · xterm</b></div>
-        <div className="vato-about-row"><span>Raccourci réglages</span><b>Ctrl ,</b></div>
+      </div>
+
+      <div className="vato-set-h" style={{ marginTop: 22 }}>{t("settings.about.onboardingH")}</div>
+      <div className="vato-stt-hint" style={{ marginTop: 2 }}>{t("settings.about.onboardingHint")}</div>
+      <button
+        className="vato-resume-btn"
+        style={{ marginTop: 12 }}
+        onClick={() => restartOnboarding()}
+      >
+        <InfoIcon size={15} /> {t("settings.about.restartOnboarding")}
+      </button>
+    </>
+  );
+}
+
+/* ---------------------------- Language ---------------------------- */
+function LanguageSection() {
+  const t = useT();
+  const lang = useStore((s) => s.settings.lang);
+  const setLang = useStore((s) => s.setLang);
+
+  return (
+    <>
+      <div className="vato-set-h">{t("settings.language.h")}</div>
+      <div className="vato-stt-hint" style={{ marginTop: 2 }}>
+        {t("settings.language.hint")}
+      </div>
+
+      <div className="vato-seg" style={{ marginTop: 14 }}>
+        {APP_LANGS.map((l) => (
+          <button
+            key={l.code}
+            className={`vato-seg-btn ${lang === l.code ? "on" : ""}`}
+            onClick={() => setLang(l.code)}
+          >
+            <span style={{ marginRight: 6 }}>{l.flag}</span>
+            {l.label}
+          </button>
+        ))}
       </div>
     </>
   );
@@ -787,6 +637,7 @@ function AboutSection() {
 const CONTENT: Record<string, () => ReactNode> = {
   agents: AgentsSection,
   voice: VoiceSection,
+  language: LanguageSection,
   shortcuts: ShortcutsSection,
   appearance: AppearanceSection,
   workspaces: WorkspacesSection,
@@ -794,6 +645,7 @@ const CONTENT: Record<string, () => ReactNode> = {
 };
 
 export function SettingsPanel() {
+  const t = useT();
   const toggleSettings = useStore((s) => s.toggleSettings);
   const section = useStore((s) => s.settingsSection);
   const setSection = (id: string) => useStore.setState({ settingsSection: id });
@@ -815,7 +667,7 @@ export function SettingsPanel() {
         <aside className="vato-settings-side">
           <div className="vato-settings-brand">
             <img src="/logo.png" alt="" draggable={false} />
-            <span>Réglages</span>
+            <span>{t("settings.title")}</span>
           </div>
           {SECTIONS.map((s) => (
             <button
@@ -824,15 +676,15 @@ export function SettingsPanel() {
               onClick={() => setSection(s.id)}
             >
               <s.Icon size={17} />
-              <span>{s.label}</span>
+              <span>{t(`settings.sec.${s.id}`)}</span>
             </button>
           ))}
         </aside>
 
         <main className="vato-settings-main">
           <div className="vato-settings-head">
-            <span>{active.label}</span>
-            <button className="vato-tb-btn" onClick={() => toggleSettings(false)} title="Fermer (Esc)">
+            <span>{t(`settings.sec.${active.id}`)}</span>
+            <button className="vato-tb-btn" onClick={() => toggleSettings(false)} title={t("settings.closeEsc")}>
               <CloseIcon size={16} />
             </button>
           </div>

@@ -1,13 +1,15 @@
 import { useEffect, useReducer } from "react";
-import { useActiveWorkspace, useStore } from "../store";
+import { focusGridWindows, useActiveWorkspace, useStore } from "../store";
 import { panCanvasBy, setFocusMode, setPointerClient, useCanvasState, wheelDelta, zoomCanvasAtClient } from "./canvasState";
 import { useDrag } from "./dragState";
 import { computeTiles } from "./tiling";
 import { ExcalidrawCanvas } from "./ExcalidrawCanvas";
 import { WindowFrame, type Rect } from "../windows/WindowFrame";
 import { BackgroundLayer } from "../ui/BackgroundLayer";
+import { useWindowMarquee } from "./useWindowMarquee";
 
 export function Canvas() {
+  useWindowMarquee();
   const ws = useActiveWorkspace();
   const fullscreenId = useStore((s) => s.fullscreenId);
   const focusMode = useStore((s) => s.focusMode);
@@ -88,25 +90,34 @@ export function Canvas() {
     ? "none"
     : `translate(${scrollX * zoom}px, ${scrollY * zoom}px) scale(${zoom})`;
 
-  const n = ws.windows.length;
   const dragging = !!draggingId && !!previewIds; // grid reorder in progress (focus only)
   // Grid is active in focus mode (and is implied during a reorder drag). It is a
   // pure display transform — the windows' stored x/y (their free positions) are
   // never overwritten, so leaving focus restores them.
   const grid = focusMode || dragging;
-  const tiles = grid ? computeTiles(n) : null;
+  // In focus mode the grid lays out ONLY the panes passing this workspace's filter
+  // (agents / terminals / all); the rest stay mounted but hidden so their PTY keeps
+  // running. This filtered list is the single source of truth — Canvas tiles it and
+  // WindowFrame reorders against the same set (focusGridWindows), so slots stay in
+  // sync. `slotOf` maps a window id to its tile index (absent → filtered out).
+  const gridWins = grid ? focusGridWindows(ws) : ws.windows;
+  const tiles = grid ? computeTiles(gridWins.length) : null;
+  const slotOf = new Map(gridWins.map((w, i) => [w.id, i] as const));
 
   // Resolve a window's on-screen rect for the current mode:
   //  - free mode      -> its stored free position
-  //  - focus (static) -> its grid slot, by array order
+  //  - focus (static) -> its grid slot, by array order (within the filtered set)
   //  - reorder drag   -> non-dragged windows animate to their preview slot; the
   //                      dragged one keeps its starting slot (react-rnd offsets it)
-  const rectFor = (id: string, index: number, free: Rect): Rect => {
+  const rectFor = (id: string, slot: number, free: Rect): Rect => {
     if (!tiles) return free;
-    if (!dragging) return tiles[index];
-    if (id === draggingId) return tiles[index];
+    // tiles[slot] can be undefined when the focus filter yields 0 windows
+    // (computeTiles(0) = []) — fall back to the free position so WindowFrame
+    // never receives undefined and crashes.
+    if (!dragging) return tiles[slot] ?? free;
+    if (id === draggingId) return tiles[slot] ?? free;
     const pIndex = previewIds!.indexOf(id);
-    return pIndex >= 0 ? tiles[pIndex] : tiles[index];
+    return (pIndex >= 0 ? tiles[pIndex] : tiles[slot]) ?? free;
   };
 
   const dropTile = dragging && tiles && previewIndex >= 0 ? tiles[previewIndex] : null;
@@ -143,19 +154,24 @@ export function Canvas() {
           />
         )}
 
-        {ws.windows.map((w, i) => (
-          <WindowFrame
-            key={w.id}
-            win={w}
-            rect={rectFor(w.id, i, { x: w.x, y: w.y, width: w.width, height: w.height })}
-            zoom={zoom}
-            focusMode={focusMode}
-            fullscreen={fullscreenId === w.id}
-            hidden={!!fullscreenId && fullscreenId !== w.id}
-            isDragged={draggingId === w.id}
-            animate={!fullscreenId}
-          />
-        ))}
+        {ws.windows.map((w) => {
+          const slot = slotOf.get(w.id);
+          const filteredOut = grid && slot === undefined; // not in the focus filter
+          return (
+            <WindowFrame
+              key={w.id}
+              win={w}
+              rect={rectFor(w.id, slot ?? 0, { x: w.x, y: w.y, width: w.width, height: w.height })}
+              zoom={zoom}
+              focusMode={focusMode}
+              fullscreen={fullscreenId === w.id}
+              hidden={(!!fullscreenId && fullscreenId !== w.id) || filteredOut}
+              isDragged={draggingId === w.id}
+              animate={!fullscreenId}
+            />
+          );
+        })}
+
       </div>
     </div>
   );

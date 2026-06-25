@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 import { FONT_FAMILY } from "@excalidraw/excalidraw";
 import { useCanvasState } from "../canvas/canvasState";
+import { useT, type TFn } from "../i18n";
 import {
   applyStyle,
   commonVal,
@@ -54,40 +55,41 @@ function Head({ kind, flip }: { kind: string | null; flip?: boolean }) {
 }
 
 /* -------------------------------------------------------------- option sets -- */
+// `t` holds an i18n key resolved (as the button tooltip) at render time.
 const FILL_STYLES = [
-  { v: "hachure", t: "Hachures", i: Ico.hachure },
-  { v: "cross-hatch", t: "Croisillon", i: Ico.cross },
-  { v: "solid", t: "Plein", i: Ico.solidFill },
-  { v: "zigzag", t: "Zigzag", i: Ico.zigzag },
+  { v: "hachure", t: "style.fillStyle.hachure", i: Ico.hachure },
+  { v: "cross-hatch", t: "style.fillStyle.cross", i: Ico.cross },
+  { v: "solid", t: "style.fillStyle.solid", i: Ico.solidFill },
+  { v: "zigzag", t: "style.fillStyle.zigzag", i: Ico.zigzag },
 ];
 const STROKE_STYLES = [
-  { v: "solid", t: "Plein", i: Ico.lineSolid },
-  { v: "dashed", t: "Tirets", i: Ico.lineDashed },
-  { v: "dotted", t: "Pointillés", i: Ico.lineDotted },
+  { v: "solid", t: "style.line.solid", i: Ico.lineSolid },
+  { v: "dashed", t: "style.line.dashed", i: Ico.lineDashed },
+  { v: "dotted", t: "style.line.dotted", i: Ico.lineDotted },
 ];
 const WIDTHS = [
-  { v: 1, t: "Fin", i: Ico.wThin },
-  { v: 2, t: "Moyen", i: Ico.wMed },
-  { v: 4, t: "Épais", i: Ico.wThick },
+  { v: 1, t: "style.w.thin", i: Ico.wThin },
+  { v: 2, t: "style.w.med", i: Ico.wMed },
+  { v: 4, t: "style.w.thick", i: Ico.wThick },
 ];
 const ROUGHS = [
-  { v: 0, t: "Net", i: Ico.rough0 },
-  { v: 1, t: "Crayon", i: Ico.rough1 },
-  { v: 2, t: "Esquisse", i: Ico.rough2 },
+  { v: 0, t: "style.rough.net", i: Ico.rough0 },
+  { v: 1, t: "style.rough.pencil", i: Ico.rough1 },
+  { v: 2, t: "style.rough.sketch", i: Ico.rough2 },
 ];
 const CORNER_OPTS = [
-  { v: false, t: "Vifs", i: Ico.sharp },
-  { v: true, t: "Arrondis", i: Ico.round },
+  { v: false, t: "style.corner.sharp", i: Ico.sharp },
+  { v: true, t: "style.corner.round", i: Ico.round },
 ];
 const ALIGNS = [
-  { v: "left", t: "Gauche", i: Ico.alignL },
-  { v: "center", t: "Centré", i: Ico.alignC },
-  { v: "right", t: "Droite", i: Ico.alignR },
+  { v: "left", t: "style.align.left", i: Ico.alignL },
+  { v: "center", t: "style.align.center", i: Ico.alignC },
+  { v: "right", t: "style.align.right", i: Ico.alignR },
 ];
 const FONTS = [
-  { v: FONT_FAMILY.Excalifont, t: "Manuscrit", l: "Main" },
-  { v: FONT_FAMILY.Nunito, t: "Normal", l: "Aa" },
-  { v: FONT_FAMILY.Cascadia, t: "Code", l: "</>" },
+  { v: FONT_FAMILY.Excalifont, t: "style.font.hand", l: "Main" },
+  { v: FONT_FAMILY.Nunito, t: "style.font.normal", l: "Aa" },
+  { v: FONT_FAMILY.Cascadia, t: "style.font.code", l: "</>" },
 ];
 const SIZES = [
   { v: 16, l: "S" },
@@ -96,23 +98,12 @@ const SIZES = [
   { v: 36, l: "XL" },
 ];
 const HEADS = [
-  { v: null, t: "Aucune" },
-  { v: "arrow", t: "Flèche" },
-  { v: "triangle", t: "Triangle" },
-  { v: "dot", t: "Point" },
-  { v: "bar", t: "Barre" },
+  { v: null, t: "style.head.none" },
+  { v: "arrow", t: "style.head.arrow" },
+  { v: "triangle", t: "style.head.triangle" },
+  { v: "dot", t: "style.head.dot" },
+  { v: "bar", t: "style.head.bar" },
 ];
-
-const TYPE_FR: Record<string, string> = {
-  rectangle: "Rectangle",
-  diamond: "Losange",
-  ellipse: "Cercle",
-  arrow: "Flèche",
-  line: "Ligne",
-  freedraw: "Dessin",
-  text: "Texte",
-  image: "Image",
-};
 
 /* ----------------------------------------------------------- sub-components -- */
 function Section({ label, children }: { label: string; children: ReactNode }) {
@@ -126,18 +117,20 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
 
 interface SegOpt {
   v: any;
+  /** i18n key for the tooltip. */
   t?: string;
   i?: ReactNode;
   l?: string;
 }
 function Segmented({ opts, value, onPick }: { opts: SegOpt[]; value: any; onPick: (v: any) => void }) {
+  const t = useT();
   return (
     <div className="vato-style-seg">
       {opts.map((o, k) => (
         <button
           key={k}
           className={`vato-style-segbtn ${o.v === value ? "on" : ""}`}
-          title={o.t}
+          title={o.t ? t(o.t) : undefined}
           onClick={() => onPick(o.v)}
         >
           {o.i ?? <span className="txt">{o.l ?? String(o.v)}</span>}
@@ -151,10 +144,12 @@ function Swatches({
   colors,
   value,
   onPick,
+  t,
 }: {
   colors: string[];
   value: string | undefined;
   onPick: (c: string) => void;
+  t: TFn;
 }) {
   const custom = value && value !== "transparent" && !colors.includes(value);
   return (
@@ -164,11 +159,11 @@ function Swatches({
           key={c}
           className={`vato-sw ${c === "transparent" ? "transp" : ""} ${c === value ? "on" : ""}`}
           style={c === "transparent" ? undefined : { background: c }}
-          title={c === "transparent" ? "Aucun" : c}
+          title={c === "transparent" ? t("style.none") : c}
           onClick={() => onPick(c)}
         />
       ))}
-      <label className={`vato-sw custom ${custom ? "on" : ""}`} title="Couleur personnalisée" style={custom ? { background: value } : undefined}>
+      <label className={`vato-sw custom ${custom ? "on" : ""}`} title={t("style.customColor")} style={custom ? { background: value } : undefined}>
         {!custom && <span>+</span>}
         <input
           type="color"
@@ -182,6 +177,7 @@ function Swatches({
 
 /* ----------------------------------------------------------------- panel ----- */
 export function ShapeStylePanel() {
+  const t = useT();
   const styleRev = useCanvasState((s) => s.styleRev);
   const activeTool = useCanvasState((s) => s.activeTool);
   const ready = useCanvasState((s) => s.ready);
@@ -238,13 +234,15 @@ export function ShapeStylePanel() {
   const angle =
     showAngle && elements[0] ? Math.round(((elements[0].angle * 180) / Math.PI + 360) % 360) : 0;
 
+  // A single known type shows its tool name; otherwise a generic count/label.
+  const typeName = (ty: string) => (ty ? t(`tool.${ty}`) : t("style.element"));
   const headerName =
     mode === "defaults"
-      ? "Style par défaut"
+      ? t("style.defaults")
       : count === 1
-        ? TYPE_FR[[...types][0]] ?? "Élément"
-        : `${count} éléments`;
-  const headerSub = mode === "defaults" ? TYPE_FR[activeTool] ?? activeTool : count > 1 ? "sélection" : "";
+        ? typeName([...types][0])
+        : t("style.elements", { n: count });
+  const headerSub = mode === "defaults" ? typeName(activeTool) : count > 1 ? t("style.selection") : "";
 
   return (
     <div className="vato-style-panel" onPointerDown={(e) => e.stopPropagation()}>
@@ -254,63 +252,63 @@ export function ShapeStylePanel() {
       </div>
 
       {showColor && (
-        <Section label={onlyText ? "Couleur du texte" : "Trait"}>
-          <Swatches colors={STROKE_SWATCHES} value={strokeColor} onPick={(c) => apply({ strokeColor: c })} />
+        <Section label={onlyText ? t("style.textColor") : t("style.strokeColor")}>
+          <Swatches colors={STROKE_SWATCHES} value={strokeColor} onPick={(c) => apply({ strokeColor: c })} t={t} />
         </Section>
       )}
 
       {showFill && (
-        <Section label="Fond">
-          <Swatches colors={FILL_SWATCHES} value={bgColor} onPick={(c) => apply({ backgroundColor: c })} />
+        <Section label={t("style.fill")}>
+          <Swatches colors={FILL_SWATCHES} value={bgColor} onPick={(c) => apply({ backgroundColor: c })} t={t} />
         </Section>
       )}
 
       {showFill && hasFillColor && (
-        <Section label="Remplissage">
+        <Section label={t("style.fillStyle")}>
           <Segmented opts={FILL_STYLES} value={fillStyle} onPick={(v) => apply({ fillStyle: v })} />
         </Section>
       )}
 
       {showStroke && (
-        <Section label="Épaisseur">
+        <Section label={t("style.width")}>
           <Segmented opts={WIDTHS} value={strokeWidth} onPick={(v) => apply({ strokeWidth: v })} />
         </Section>
       )}
 
       {showStroke && (
-        <Section label="Type de trait">
+        <Section label={t("style.strokeStyle")}>
           <Segmented opts={STROKE_STYLES} value={strokeStyle} onPick={(v) => apply({ strokeStyle: v })} />
         </Section>
       )}
 
       {showStroke && (
-        <Section label="Style de tracé">
+        <Section label={t("style.sloppiness")}>
           <Segmented opts={ROUGHS} value={roughness} onPick={(v) => apply({ roughness: v })} />
         </Section>
       )}
 
       {showCorners && (
-        <Section label="Coins">
+        <Section label={t("style.corners")}>
           <Segmented opts={CORNER_OPTS} value={round} onPick={(v) => apply({ round: v })} />
         </Section>
       )}
 
       {showText && (
         <>
-          <Section label="Police">
+          <Section label={t("style.font")}>
             <Segmented opts={FONTS} value={fontFamily} onPick={(v) => apply({ fontFamily: v })} />
           </Section>
-          <Section label="Taille">
+          <Section label={t("style.size")}>
             <Segmented opts={SIZES} value={fontSize} onPick={(v) => apply({ fontSize: v })} />
           </Section>
-          <Section label="Alignement">
+          <Section label={t("style.align")}>
             <Segmented opts={ALIGNS} value={textAlign} onPick={(v) => apply({ textAlign: v })} />
           </Section>
         </>
       )}
 
       {showArrow && (
-        <Section label="Pointes">
+        <Section label={t("style.arrowheads")}>
           <div className="vato-style-heads">
             <Segmented opts={HEADS.map((h) => ({ v: h.v, t: h.t, i: <Head kind={h.v} flip /> }))} value={startHead} onPick={(v) => apply({ startArrowhead: v })} />
             <Segmented opts={HEADS.map((h) => ({ v: h.v, t: h.t, i: <Head kind={h.v} /> }))} value={endHead} onPick={(v) => apply({ endArrowhead: v })} />
@@ -318,7 +316,7 @@ export function ShapeStylePanel() {
         </Section>
       )}
 
-      <Section label={`Opacité — ${Math.round(opacity)}%`}>
+      <Section label={t("style.opacity", { pct: Math.round(opacity) })}>
         <input
           className="vato-style-range"
           type="range"
@@ -331,7 +329,7 @@ export function ShapeStylePanel() {
       </Section>
 
       {showAngle && (
-        <Section label={`Rotation — ${angle}°`}>
+        <Section label={t("style.rotation", { deg: angle })}>
           <input
             className="vato-style-range"
             type="range"

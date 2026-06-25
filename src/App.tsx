@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Canvas } from "./canvas/Canvas";
 import { TitleBar } from "./ui/TitleBar";
 import { TopBar } from "./ui/TopBar";
@@ -10,21 +10,33 @@ import { GridOverview } from "./ui/GridOverview";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import { ResumeDialog } from "./ui/ResumeDialog";
 import { NewWorkspaceDialog } from "./ui/NewWorkspaceDialog";
+import { Onboarding } from "./ui/Onboarding";
 import { MinimizeIcon } from "./ui/icons";
-import { useStore, countResumableAgents } from "./store";
+import { useStore, countResumableAgents, focusGridWindows, useActiveWorkspace } from "./store";
 import { useShortcuts } from "./canvas/shortcuts";
 import { setFocusMode } from "./canvas/canvasState";
+import { useT } from "./i18n";
 
 export default function App() {
+  const t = useT();
   const fullscreenId = useStore((s) => s.fullscreenId);
   const focusMode = useStore((s) => s.focusMode);
+  const activeWs = useActiveWorkspace();
+  const activeId = useStore((s) => s.activeId);
   const showGrid = useStore((s) => s.showGrid);
   const showSettings = useStore((s) => s.showSettings);
   const newWorkspaceOpen = useStore((s) => s.newWorkspaceOpen);
   const setFullscreen = useStore((s) => s.setFullscreen);
   const toggleGrid = useStore((s) => s.toggleGrid);
+  // No workspace yet (first launch / everything deleted): force the picker.
+  const noWorkspace = useStore((s) => s.workspaces.length === 0);
+  // First-run onboarding wizard (folder, background, shortcuts, voice, tips).
+  const onboardingDone = useStore((s) => s.onboardingDone);
   // Show the resume prompt once at startup if last session left resumable agents.
   const showResume = useStore((s) => !s.resumeDismissed && countResumableAgents(s) > 0);
+  // The voice bar is useless without an OpenAI key (cloud-only). Hide it until one
+  // is configured — Settings stays reachable via the top bar / Ctrl+, to add it.
+  const hasVoiceKey = useStore((s) => !!s.settings.stt.openaiKey.trim());
 
   useShortcuts();
 
@@ -44,8 +56,45 @@ export default function App() {
   // grows, and slides back on a smooth hover of the matching edge rail.
   const zen = focusMode && !fullscreenId;
 
+  // On a workspace switch the top bar carries the new space's name, but in focus
+  // mode it's tucked away — and switching focus→focus never re-animates it, so the
+  // name is never legible. Peek the chrome back for a beat on every switch, then
+  // let it tuck away again via the bars' standard transition.
+  const [peek, setPeek] = useState(false);
+  useEffect(() => {
+    setPeek(true);
+    const id = window.setTimeout(() => setPeek(false), 1500);
+    return () => window.clearTimeout(id);
+  }, [activeId]);
+
+  // First-run gate #1: onboarding on a brand-new install, before any workspace
+  // exists. There is nothing to render behind yet (the canvas dereferences an
+  // active workspace), so the wizard owns the screen for its language + folder
+  // steps. Once it creates a workspace, the branch below mounts the live canvas
+  // with the wizard layered on top (so the final "practice" step is interactive).
+  if (!onboardingDone && noWorkspace) {
+    return (
+      <div className="vato-root">
+        <TitleBar />
+        <Onboarding />
+      </div>
+    );
+  }
+
+  // First-run gate #2: onboarding done but no workspace (e.g. it was skipped, or
+  // every space was later deleted) — force the (non-dismissable) picker. The
+  // canvas/top-bar would dereference an undefined active workspace otherwise.
+  if (noWorkspace) {
+    return (
+      <div className="vato-root">
+        <TitleBar />
+        <NewWorkspaceDialog forced />
+      </div>
+    );
+  }
+
   return (
-    <div className={`vato-root ${zen ? "vato-focus" : ""}`}>
+    <div className={`vato-root ${zen ? "vato-focus" : ""} ${peek ? "vato-peek" : ""}`}>
       <Canvas />
 
       <TitleBar />
@@ -65,20 +114,59 @@ export default function App() {
           <LeftToolbar />
           <ShapeStylePanel />
           <ZoomControl />
-          <VoiceBar />
+          {hasVoiceKey && <VoiceBar />}
         </>
       )}
 
       {fullscreenId && (
         <button className="vato-exit-fs" onClick={() => setFullscreen(null)}>
-          <MinimizeIcon size={15} /> Quitter le plein écran (Esc)
+          <MinimizeIcon size={15} /> {t("app.exitFullscreen")}
         </button>
+      )}
+
+      {/* Empty state: focus mode active but the current filter has no matching windows */}
+      {focusMode && !fullscreenId && focusGridWindows(activeWs).length === 0 && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 10,
+          pointerEvents: "none",
+        }}>
+          <div style={{
+            background: "rgba(15,18,28,0.75)",
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 12,
+            padding: "18px 26px",
+            textAlign: "center",
+          }}>
+            <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 14, fontWeight: 500, marginBottom: 4 }}>
+              {t(
+                (activeWs.focusFilter ?? "all") === "agents"
+                  ? "focus.emptyAgents"
+                  : (activeWs.focusFilter ?? "all") === "terminals"
+                  ? "focus.emptyTerminals"
+                  : "focus.emptyAll",
+              )}
+            </div>
+            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 12 }}>
+              {t("focus.emptyHint")}
+            </div>
+          </div>
+        </div>
       )}
 
       {showGrid && <GridOverview />}
       {showSettings && <SettingsPanel />}
       {newWorkspaceOpen && <NewWorkspaceDialog />}
       {showResume && <ResumeDialog />}
+
+      {/* Onboarding layered over the LIVE app: its early steps cover the canvas
+          (modal), but the final "practice" step is a non-blocking coach so the
+          user can trigger real shortcuts on the canvas behind it. */}
+      {!onboardingDone && <Onboarding />}
     </div>
   );
 }

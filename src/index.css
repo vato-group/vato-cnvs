@@ -202,6 +202,12 @@ body {
   box-shadow: 0 26px 70px rgba(0, 0, 0, 0.6);
   cursor: grabbing;
 }
+/* Multi-selection ring (marquee / click). Outline rides outside the rounded
+   frame and stacks with the status box-shadow rings. */
+.vato-window.selected {
+  outline: 2px solid rgba(108, 160, 255, 0.95);
+  outline-offset: 2px;
+}
 
 /* Centered overlay placeholder when an image is pasted into a terminal */
 .vato-paste-overlay {
@@ -224,6 +230,19 @@ body {
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+.vato-paste-spinner {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.18);
+  border-top-color: rgba(255, 255, 255, 0.85);
+  animation: vato-spin 0.7s linear infinite;
+}
+@keyframes vato-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .vato-paste-overlay .cap {
   font-size: 12px;
@@ -327,28 +346,6 @@ body {
 .vato-ws-btn:hover {
   background: rgba(255, 255, 255, 0.1);
 }
-.vato-ws-tabs {
-  display: flex;
-  gap: 4px;
-}
-.vato-ws-tab {
-  min-width: 32px;
-  height: 32px;
-  padding: 0 10px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.72);
-  border: none;
-  cursor: pointer;
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.vato-ws-tab:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
 .vato-icon-btn {
   width: 34px;
   height: 34px;
@@ -381,6 +378,35 @@ body {
 }
 .vato-agent-btn:hover {
   filter: brightness(1.07);
+}
+
+/* Focus-mode pane filter (Tous / Agents / Terminaux) — a small segmented pill. */
+.vato-focus-filter {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  flex: 0 0 auto;
+}
+.vato-seg {
+  padding: 5px 11px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.62);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.vato-seg:hover {
+  color: #fff;
+}
+.vato-seg.on {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
 }
 
 /* ---------------- Dropdown / menu ---------------- */
@@ -531,12 +557,21 @@ body {
   border-radius: 9px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background-color: #0b0d12;
-  background-size: cover;
-  background-position: center;
   cursor: pointer;
   overflow: hidden;
   padding: 0;
   transition: border-color 0.12s ease, transform 0.12s ease;
+}
+.vato-bg-tile > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+  pointer-events: none;
+  -webkit-user-drag: none;
 }
 .vato-bg-tile::after {
   content: "";
@@ -1112,6 +1147,92 @@ body {
   color: #ffc4c4;
   font-size: 12px;
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Inline mic picker surfaced above the error banner so the user can switch
+   to a working input device without opening settings. */
+.vato-voice-micswitch {
+  position: absolute;
+  bottom: calc(100% + 44px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 92%;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(20, 24, 34, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.vato-voice-micswitch select {
+  max-width: 220px;
+  margin: 0;
+}
+
+/* Dictée ↔ Commande segmented toggle, sitting inline in the voice bar. */
+.vato-voice-actionseg {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  flex: 0 0 auto;
+}
+.vato-voice-actbtn {
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.vato-voice-actbtn:hover {
+  color: #dfe3ea;
+}
+.vato-voice-actbtn.on {
+  background: rgba(108, 160, 255, 0.92);
+  color: #0b0d12;
+}
+.vato-voice-result {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 90%;
+  padding: 7px 12px;
+  border-radius: 10px;
+  background: rgba(16, 40, 30, 0.94);
+  border: 1px solid rgba(94, 240, 160, 0.38);
+  color: #b7f4d2;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The recognized transcript — sits just above the result/error banner. */
+.vato-voice-heard {
+  position: absolute;
+  bottom: calc(100% + 40px);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 88%;
+  padding: 5px 11px;
+  border-radius: 9px;
+  background: rgba(20, 24, 34, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(231, 233, 238, 0.78);
+  font-size: 11.5px;
+  font-style: italic;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1717,6 +1838,16 @@ select.vato-input option {
 .vato-newws-cmd input::placeholder {
   color: rgba(255, 255, 255, 0.32);
 }
+.vato-newws-focus {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px 0;
+}
+.vato-newws-focus .lbl {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+}
 .vato-newws-foot {
   display: flex;
   align-items: center;
@@ -2186,7 +2317,10 @@ select.vato-input option {
 
 /* Reveal — hovering the edge rail, or the bar itself once it's on-screen. */
 .vato-focus .vato-hot-top:hover ~ .vato-topbar,
-.vato-focus .vato-topbar:hover {
+.vato-focus .vato-topbar:hover,
+/* Peek — on a workspace switch the top bar slides back for a beat so the new
+   space's name is legible, then tucks away again via the standard transition. */
+.vato-focus.vato-peek .vato-topbar {
   transform: translateX(-50%) translateY(0);
   opacity: 1;
 }
@@ -2201,7 +2335,10 @@ select.vato-input option {
   opacity: 1;
 }
 .vato-focus .vato-hot-bottom:hover ~ .vato-voicebar,
-.vato-focus .vato-voicebar:hover {
+.vato-focus .vato-voicebar:hover,
+/* Force the bar on-screen while the voice is active (listening / transcribing /
+   running a command), even with no hover — so you can see what's happening. */
+.vato-focus .vato-voicebar.reveal {
   transform: translateX(-50%) translateY(0);
   opacity: 1;
 }
@@ -2209,4 +2346,575 @@ select.vato-input option {
 .vato-focus .vato-zoom:hover {
   transform: translateY(0);
   opacity: 1;
+}
+
+/* ---------------- First-run onboarding wizard ---------------- */
+@keyframes vato-onb-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.vato-onb-root {
+  position: absolute;
+  inset: 0;
+  z-index: 160;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Keep the wizard off the window edges, but stay small on short viewports so
+     content-heavy steps (e.g. the tips grid) fit without forcing a scroll. */
+  padding: clamp(12px, 4vh, 32px);
+}
+.vato-onb-scrim {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(1200px 820px at 50% 28%, rgba(8, 10, 14, 0.5), rgba(8, 10, 14, 0.84));
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+.vato-onb-card {
+  position: relative;
+  z-index: 1;
+  width: min(760px, 94vw);
+  max-height: 90vh;
+  min-height: min(540px, 86vh);
+  display: flex;
+  flex-direction: column;
+  background: rgba(18, 21, 29, 0.92);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  box-shadow: 0 40px 100px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  animation: vato-onb-rise 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Header */
+.vato-onb-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 22px 22px 14px;
+  flex: 0 0 auto;
+}
+.vato-onb-step-ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: linear-gradient(160deg, rgba(79, 124, 255, 0.3), rgba(79, 124, 255, 0.1));
+  border: 1px solid rgba(124, 160, 255, 0.35);
+  color: #bcd0ff;
+}
+.vato-onb-head-text {
+  min-width: 0;
+}
+.vato-onb-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(124, 160, 255, 0.85);
+  margin-bottom: 5px;
+}
+.vato-onb-head h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #f2f4f8;
+}
+.vato-onb-head p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+/* Body */
+.vato-onb-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 2px 22px 8px;
+}
+.vato-onb-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+/* Folder picker borrows the new-workspace styles; drop their side margins so it
+   aligns with the wizard's own body padding. */
+.vato-onb-body .vato-newws-crumbs,
+.vato-onb-body .vato-newws-list,
+.vato-onb-body .vato-newws-cmd {
+  margin-left: 0;
+  margin-right: 0;
+}
+.vato-onb-body .vato-newws-list {
+  min-height: 120px;
+}
+.vato-onb-folder-target {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  flex: 0 0 auto;
+}
+.vato-onb-folder-target .lbl {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+.vato-onb-folder-target code {
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #cfe0ff;
+  background: rgba(108, 160, 255, 0.14);
+  border: 1px solid rgba(108, 160, 255, 0.3);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+.vato-onb-folder-target .meta {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.42);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Shortcut rebind rows */
+.vato-onb-srow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 12px;
+  margin-bottom: 8px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.vato-onb-srow-text {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.vato-onb-srow-text .label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #eef1f6;
+}
+.vato-onb-srow-text .hint {
+  font-size: 12px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Tips grid */
+.vato-onb-tips {
+  display: grid;
+  /* minmax(0, …) lets each column shrink below its content's intrinsic width so
+     long labels ellipsize instead of pushing the key cap off the card. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.vato-onb-tip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.vato-onb-tip .ico {
+  display: flex;
+  flex: 0 0 auto;
+  color: rgba(255, 255, 255, 0.85);
+}
+.vato-onb-tip .lbl {
+  flex: 1 1 auto;
+  font-size: 13px;
+  font-weight: 500;
+  color: #e7e9ee;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vato-onb-key {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #cfe0ff;
+  background: rgba(108, 160, 255, 0.14);
+  border: 1px solid rgba(108, 160, 255, 0.3);
+  border-radius: 6px;
+  padding: 3px 7px;
+  white-space: nowrap;
+}
+
+/* Selected colour swatch (onboarding + settings) */
+.vato-bg-swatch.on {
+  border-color: #6ea8fe;
+  box-shadow: 0 0 0 1px #6ea8fe;
+}
+
+/* Voice yes/no choice */
+.vato-onb-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.vato-onb-choice-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e7e9ee;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.vato-onb-choice-btn svg {
+  color: rgba(255, 255, 255, 0.6);
+}
+.vato-onb-choice-btn:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+}
+.vato-onb-choice-btn.on {
+  border-color: #4f7cff;
+  background: rgba(79, 124, 255, 0.12);
+  box-shadow: 0 0 0 1px rgba(79, 124, 255, 0.5);
+}
+.vato-onb-choice-btn.on svg {
+  color: #9bb8ff;
+}
+.vato-onb-choice-btn .t {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #f2f4f8;
+}
+.vato-onb-choice-btn .d {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+.vato-onb-voice-form {
+  margin-top: 16px;
+}
+
+/* Footer */
+.vato-onb-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  flex: 0 0 auto;
+}
+.vato-onb-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+}
+.vato-onb-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  transform-origin: center;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+.vato-onb-dot.done {
+  background: rgba(108, 160, 255, 0.55);
+}
+.vato-onb-dot.on {
+  /* scaleX(20/7 ≈ 2.857): 7px DOM width → 20px visual width, no layout shift.
+     border-radius: 50% scaled gives a natural stadium/pill shape. */
+  transform: scaleX(2.857);
+  background: #6ea8fe;
+}
+.vato-onb-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.vato-onb-actions .vato-resume-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Language picker cards (onboarding step 1) */
+.vato-onb-langs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.vato-onb-lang {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e7e9ee;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+}
+.vato-onb-lang:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+  transform: translateY(-1px);
+}
+.vato-onb-lang.on {
+  border-color: #4f7cff;
+  background: rgba(79, 124, 255, 0.12);
+  box-shadow: 0 0 0 1px rgba(79, 124, 255, 0.5);
+}
+.vato-onb-lang .flag {
+  font-size: 32px;
+  line-height: 1;
+}
+.vato-onb-lang .name {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.vato-onb-lang .tick {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #4f7cff;
+  color: #fff;
+}
+
+/* Practice coach — non-blocking card pinned over the live canvas */
+.vato-onb-coach {
+  position: absolute;
+  z-index: 160;
+  top: 50%;
+  right: 18px;
+  transform: translateY(-50%);
+  width: 320px;
+  max-height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(18, 21, 29, 0.94);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+  animation: vato-onb-rise 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.vato-onb-coach-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.vato-onb-coach-head .vato-onb-step-ico {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+}
+.vato-onb-coach-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #f2f4f8;
+}
+.vato-onb-coach-sub {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.62);
+}
+.vato-onb-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 14px;
+  overflow-y: auto;
+}
+.vato-onb-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.25s ease;
+}
+/* Live keystroke echo: glow the instant the bound shortcut fires, then fade. */
+.vato-onb-check.flash {
+  border-color: rgba(108, 160, 255, 0.7);
+  box-shadow: 0 0 0 1px rgba(108, 160, 255, 0.6), 0 0 16px rgba(108, 160, 255, 0.45);
+}
+.vato-onb-check .box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.7);
+}
+.vato-onb-check .lbl {
+  flex: 1 1 auto;
+  font-size: 13px;
+  font-weight: 500;
+  color: #e7e9ee;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vato-onb-check.done {
+  background: rgba(52, 199, 120, 0.12);
+  border-color: rgba(52, 199, 120, 0.45);
+}
+.vato-onb-check.done .box {
+  background: #2fb574;
+  border-color: #2fb574;
+  color: #fff;
+}
+.vato-onb-check.done .lbl {
+  color: #b8f0d2;
+}
+.vato-onb-coach-status {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.5);
+}
+.vato-onb-coach-status.done {
+  color: #8fe6b8;
+  font-weight: 600;
+}
+.vato-onb-coach-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+.vato-onb-coach-foot .prog {
+  flex: 1 1 auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+.vato-onb-coach-foot .vato-resume-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.vato-resume-btn.primary.glow {
+  box-shadow: 0 0 0 1px rgba(79, 124, 255, 0.6), 0 0 18px rgba(79, 124, 255, 0.5);
+}
+
+/* "live" badge in the practice coach eyebrow */
+@keyframes vato-live-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+.vato-onb-livetag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #5fdc9b;
+}
+.vato-onb-livetag .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #34d27a;
+  box-shadow: 0 0 8px rgba(52, 210, 122, 0.8);
+  animation: vato-live-blink 1.4s ease-in-out infinite;
+}
+
+/* Live runtime status pill (replaces the key cap once a task is done) */
+.vato-onb-live {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.vato-onb-live::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.vato-onb-live.starting {
+  color: #f0b072;
+  background: rgba(240, 176, 114, 0.16);
+}
+.vato-onb-live.active {
+  color: #5fdc9b;
+  background: rgba(52, 210, 122, 0.16);
+}
+.vato-onb-live.starting::before {
+  animation: vato-live-blink 1s ease-in-out infinite;
+}
+.vato-onb-live.finished {
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.08);
+}
+.vato-onb-live.error {
+  color: #ff8b8b;
+  background: rgba(239, 68, 68, 0.16);
+}
+.vato-onb-live.ready {
+  color: #9bb8ff;
+  background: rgba(108, 160, 255, 0.16);
 }

@@ -51,6 +51,15 @@ export interface View {
   zoom: number;
 }
 
+/**
+ * Which panes the focus-mode grid lays out (per workspace):
+ *   • "all"       → every pane (agents, plain shells, browsers)
+ *   • "agents"    → CLI agent terminals only (cli ≠ "shell")
+ *   • "terminals" → plain shell terminals only (cli === "shell")
+ * Filtered-out panes stay mounted but hidden, so their PTY keeps running.
+ */
+export type FocusFilter = "all" | "agents" | "terminals";
+
 export interface Workspace {
   id: string;
   name: string;
@@ -60,6 +69,8 @@ export interface Workspace {
   scene: any[];
   background: Background;
   cwd?: string; // default working dir for new terminals
+  /** Which panes the focus-mode grid shows. Default "all" (treated as such when absent). */
+  focusFilter?: FocusFilter;
 }
 
 /** Per-CLI launch configuration (flags chosen in Settings). */
@@ -70,26 +81,37 @@ export interface CliLaunchConfig {
   extraArgs: string;
 }
 
-/** Local speech-to-text engine (sidecar driven). */
-export type SttEngine = "whisper" | "parakeet" | "openai";
+/** UI / assistant language of the whole app (English, French, Dutch). */
+export type UiLang = "en" | "fr" | "nl";
 
 /** How the mic is triggered. */
 export type VoiceMode = "ptt" | "continuous";
 
 export interface SttSettings {
-  engine: SttEngine;
-  /** Whisper language code, or "auto". Parakeet is English-only. */
+  /** OpenAI transcription language code, or "auto". */
   lang: string;
   mode: VoiceMode;
-  /** Write each transcribed segment straight into the target terminal. */
-  directInsert: boolean;
-  /** Optional explicit paths (else resolved from the app-data stt/ dir + PATH). */
-  whisperBinary: string;
-  whisperModel: string;
-  parakeetBinary: string;
-  /** OpenAI cloud transcription (audio API). Key stays local; never committed. */
+  /** OpenAI cloud key (transcription + command interpreter). Stays local. */
   openaiKey: string;
+  /**
+   * `deviceId` of the chosen microphone, or "" for the system default. Lets the
+   * user switch mics when the default is busy/missing (NotReadableError).
+   */
+  micDeviceId: string;
+  /** Audio transcription model (gpt-4o-(mini-)transcribe / whisper-1). */
   openaiModel: string;
+  /** Chat model that interprets spoken commands into actions. */
+  commandModel: string;
+  /** Continuous-VAD speech threshold (RMS). Lower = more sensitive mic. */
+  vadThreshold: number;
+  /** Require a wake word before acting (continuous mode only). */
+  requireWakeWord: boolean;
+  /** The wake word to listen for (e.g. "vato"). */
+  wakeWord: string;
+  /** Speak the assistant's confirmation aloud (OpenAI TTS). */
+  tts: boolean;
+  /** OpenAI TTS voice (alloy, echo, fable, onyx, nova, shimmer…). */
+  ttsVoice: string;
 }
 
 export interface AppSettings {
@@ -97,4 +119,6 @@ export interface AppSettings {
   /** actionId -> key combo (e.g. "ctrl+1"). */
   shortcuts: Record<string, string>;
   stt: SttSettings;
+  /** UI + assistant language for the whole app. */
+  lang: UiLang;
 }

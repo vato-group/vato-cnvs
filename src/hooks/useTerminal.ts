@@ -61,6 +61,20 @@ export function useTerminal(opts: UseTerminalOpts) {
     term.loadAddon(new WebLinksAddon());
     term.open(el);
 
+    // Ctrl/Cmd+V = paste. By default xterm ALSO emits the \x16 (SYN) control byte
+    // for Ctrl+V on top of the browser's native paste. A plain shell (PSReadLine)
+    // treats \x16 as "paste" so it looks fine, but TUI agents (Claude/Codex) read
+    // it as quoted-insert and then mis-parse the bracketed-paste sequence that
+    // follows → pasted text comes out corrupted/empty. Returning false here drops
+    // the \x16 WITHOUT preventDefault, so the native paste still fires: xterm
+    // pastes text, and the pane's image handler catches pasted images as before.
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type === "keydown" && (e.ctrlKey || e.metaKey) && (e.key === "v" || e.key === "V")) {
+        return false;
+      }
+      return true;
+    });
+
     // Renderer: WebGL first; fall back to canvas, then DOM. Load after open().
     try {
       const webgl = new WebglAddon();

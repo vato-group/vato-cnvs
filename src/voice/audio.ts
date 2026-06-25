@@ -1,4 +1,4 @@
-// Mic capture -> 16 kHz mono 16-bit PCM WAV (base64), fed to local STT engines.
+// Mic capture -> 16 kHz mono 16-bit PCM WAV (base64), fed to OpenAI transcription.
 //
 // Two modes:
 //   - "ptt"        : accumulate from start() until stop(), then emit one segment.
@@ -7,6 +7,63 @@
 import type { VoiceMode } from "../types";
 
 const TARGET_RATE = 16000;
+
+/* --------------------------- Device discovery --------------------------- */
+
+export interface MicDevice {
+  /** "" for the system default; otherwise the MediaDeviceInfo deviceId. */
+  deviceId: string;
+  /** Human label — only populated after mic permission was granted once. */
+  label: string;
+}
+
+/**
+ * List available audio-input devices. Labels stay empty until mic permission
+ * has been granted at least once (browser privacy rule), so call
+ * `primeMicPermission()` first if you need named entries.
+ */
+export async function listMicDevices(): Promise<MicDevice[]> {
+  if (!navigator.mediaDevices?.enumerateDevices) return [];
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices
+      .filter((d) => d.kind === "audioinput")
+      // The "default"/"communications" pseudo-devices alias a real one; drop
+      // them so the list is the actual hardware (we expose our own default).
+      .filter((d) => d.deviceId && d.deviceId !== "default" && d.deviceId !== "communications")
+      .map((d) => ({ deviceId: d.deviceId, label: d.label }));
+  } catch {
+    return [];
+  }
+}
+
+/** Prompt for mic permission (so device labels populate), then release it. */
+export async function primeMicPermission(): Promise<boolean> {
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+    s.getTracks().forEach((t) => t.stop());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Turn a getUserMedia failure into a short, actionable French message. */
+function micErrorMessage(e: unknown): string {
+  const name = e instanceof Error ? e.name : "";
+  switch (name) {
+    case "NotAllowedError":
+    case "SecurityError":
+      return "Accès micro refusé. Autorisez le microphone pour l'application.";
+    case "NotFoundError":
+    case "OverconstrainedError":
+      return "Aucun micro trouvé. Branchez un micro ou choisissez-en un autre dans les réglages vocaux.";
+    case "NotReadableError":
+      return "Micro occupé ou inaccessible (déjà utilisé par une autre application ?). Choisissez un autre micro.";
+    default:
+      return `Micro indisponible : ${String(e)}`;
+  }
+}
 
 /* ----------------------------- WAV encoding ----------------------------- */
 
@@ -85,11 +142,19 @@ export interface RecorderOpts {
   /** 0..1 input level, for the UI meter. */
   onLevel?: (rms: number) => void;
   onError?: (msg: string) => void;
+  /** Override the continuous-VAD speech threshold (RMS). Lower = more sensitive. */
+  speechThreshold?: number;
+  /** Pin capture to a specific input device; "" / undefined = system default. */
+  deviceId?: string;
 }
 
 // Continuous-mode VAD tuning.
-const SPEECH_RMS = 0.014; // above this = voice
-const SILENCE_MS = 700; // trailing silence that ends an utterance
+const SPEECH_RMS = 0.014; // default; above this = voice (overridable per recorder)
+// End-of-TURN silence: a whole spoken command (with natural mid-sentence pauses)
+// must stay ONE utterance, so we only cut after a long gap — otherwise a pause
+// like "…à echo, <pause> et lui demander…" fires "part 1" as a command on its
+// own. PTT stays the zero-latency option (one segment on release).
+const SILENCE_MS = 1400; // trailing silence that ends an utterance
 const MIN_SPEECH_MS = 250; // ignore blips shorter than this
 const PREROLL_MS = 200; // keep audio just before speech onset
 
@@ -115,25 +180,40 @@ export class VoiceRecorder {
     this.opts = opts;
   }
 
+  private openStream(deviceId: string | undefined): Promise<MediaStream> {
+    const audio: MediaTrackConstraints = {
+      channelCount: 1,
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    };
+    if (deviceId) audio.deviceId = { exact: deviceId };
+    return navigator.mediaDevices.getUserMedia({ audio });
+  }
+
   async start(): Promise<void> {
     this.stopped = false;
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
+      stream = await this.openStream(this.opts.deviceId || undefined);
     } catch (e) {
-      this.opts.onError?.(
-        e instanceof Error && e.name === "NotAllowedError"
-          ? "Accès micro refusé. Autorisez le microphone pour l'application."
-          : `Micro indisponible : ${String(e)}`,
-      );
-      return;
+      // A pinned device that's gone/unavailable: fall back to the default mic
+      // rather than failing outright, so voice keeps working after unplugging.
+      const recoverable =
+        this.opts.deviceId &&
+        e instanceof Error &&
+        (e.name === "OverconstrainedError" || e.name === "NotFoundError" || e.name === "NotReadableError");
+      if (recoverable) {
+        try {
+          stream = await this.openStream(undefined);
+        } catch (e2) {
+          this.opts.onError?.(micErrorMessage(e2));
+          return;
+        }
+      } else {
+        this.opts.onError?.(micErrorMessage(e));
+        return;
+      }
     }
 
     // stop() may have been called during the permission await (fast ptt tap).
@@ -194,7 +274,8 @@ export class VoiceRecorder {
     }
 
     // ---- continuous VAD ----
-    if (rms >= SPEECH_RMS) {
+    const threshold = this.opts.speechThreshold ?? SPEECH_RMS;
+    if (rms >= threshold) {
       if (!this.speaking) {
         // open an utterance with the pre-roll for a clean word start.
         this.speaking = true;

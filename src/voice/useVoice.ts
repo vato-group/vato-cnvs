@@ -1,10 +1,11 @@
-// Voice capture orchestration: mic -> WAV segments -> local STT -> text.
-// The caller decides what to do with the text (fill the bar, inject a terminal).
+// Voice capture orchestration: mic -> WAV segments -> OpenAI STT -> text.
+// The caller decides what to do with the text (fill the bar, inject a terminal,
+// or hand it to the spoken-command interpreter).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
 import { ptyIsAlive, ptyWrite, encodeUtf8 } from "../pty";
-import { VoiceRecorder } from "./audio";
-import { sttStatus, sttTranscribe, sttTranscribeOpenAI, type EngineStatus } from "./stt";
+import { VoiceRecorder, listMicDevices, primeMicPermission, type MicDevice } from "./audio";
+import { sttTranscribeOpenAI } from "./stt";
 
 export type VoiceStatus = "idle" | "recording" | "transcribing" | "error";
 
@@ -21,10 +22,14 @@ export interface UseVoice {
   level: number;
   error: string | null;
   setError: (e: string | null) => void;
-  engine: EngineStatus | null;
-  refreshStatus: () => void;
+  /** True once an OpenAI key is set (the only thing the cloud engine needs). */
+  ready: boolean;
   start: () => Promise<void>;
   stop: () => void;
+  /** Available audio-input devices (labels populate after first mic grant). */
+  devices: MicDevice[];
+  /** Re-enumerate mics; pass `prompt` to request permission so labels appear. */
+  refreshDevices: (prompt?: boolean) => Promise<void>;
 }
 
 export function useVoice(onText: (text: string) => void): UseVoice {
@@ -34,7 +39,7 @@ export function useVoice(onText: (text: string) => void): UseVoice {
   const [active, setActive] = useState(false);
   const [level, setLevel] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [engine, setEngine] = useState<EngineStatus | null>(null);
+  const [devices, setDevices] = useState<MicDevice[]>([]);
 
   const recorderRef = useRef<VoiceRecorder | null>(null);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
@@ -43,63 +48,37 @@ export function useVoice(onText: (text: string) => void): UseVoice {
   const sttRef = useRef(stt);
   sttRef.current = stt;
 
-  const binFor = (e: typeof stt) =>
-    e.engine === "whisper" ? e.whisperBinary : e.parakeetBinary;
-  const modelFor = (e: typeof stt) => (e.engine === "whisper" ? e.whisperModel : "");
+  const ready = !!stt.openaiKey.trim();
 
-  const refreshStatus = useCallback(() => {
-    // OpenAI readiness is purely "is a key set" — no backend probe needed.
-    if (stt.engine === "openai") {
-      const ok = !!stt.openaiKey.trim();
-      setEngine({
-        engine: "openai",
-        binary: null,
-        binary_ready: ok,
-        model: stt.openaiModel,
-        model_ready: true,
-        ready: ok,
-        note: ok ? null : "Clé API OpenAI manquante",
-      });
-      return;
-    }
-    sttStatus(stt.engine, binFor(stt), modelFor(stt))
-      .then(setEngine)
-      .catch(() => setEngine(null));
-  }, [
-    stt.engine,
-    stt.whisperBinary,
-    stt.whisperModel,
-    stt.parakeetBinary,
-    stt.openaiKey,
-    stt.openaiModel,
-  ]);
+  // Keep the device list fresh: enumerate on mount and whenever hardware is
+  // plugged/unplugged. Labels stay blank until a mic grant has happened.
+  const refreshDevices = useCallback(async (prompt = false) => {
+    if (prompt) await primeMicPermission();
+    setDevices(await listMicDevices());
+  }, []);
 
   useEffect(() => {
-    refreshStatus();
-  }, [refreshStatus]);
+    void refreshDevices();
+    const md = navigator.mediaDevices;
+    if (!md?.addEventListener) return;
+    const onChange = () => void refreshDevices();
+    md.addEventListener("devicechange", onChange);
+    return () => md.removeEventListener("devicechange", onChange);
+  }, [refreshDevices]);
 
-  // Serialize transcriptions so overlapping segments don't pile onto the sidecar.
+  // Serialize transcriptions so overlapping segments don't pile onto the network.
   const transcribeSegment = useCallback((wavBase64: string) => {
     const cur = sttRef.current;
     setStatus("transcribing");
     queueRef.current = queueRef.current.then(async () => {
       try {
-        console.log(`[voice] transcribe start (${cur.engine}, lang ${cur.lang}, wav b64 ${wavBase64.length})`);
-        const text =
-          cur.engine === "openai"
-            ? await sttTranscribeOpenAI({
-                apiKey: cur.openaiKey,
-                model: cur.openaiModel,
-                lang: cur.lang,
-                wavBase64,
-              })
-            : await sttTranscribe({
-                engine: cur.engine,
-                binary: binFor(cur),
-                model: modelFor(cur),
-                lang: cur.lang,
-                wavBase64,
-              });
+        console.log(`[voice] transcribe start (openai, lang ${cur.lang}, wav b64 ${wavBase64.length})`);
+        const text = await sttTranscribeOpenAI({
+          apiKey: cur.openaiKey,
+          model: cur.openaiModel,
+          lang: cur.lang,
+          wavBase64,
+        });
         console.log("[voice] transcribe result:", JSON.stringify(text));
         const clean = text.trim();
         if (clean) onTextRef.current(clean);
@@ -127,8 +106,10 @@ export function useVoice(onText: (text: string) => void): UseVoice {
     setError(null);
     const rec = new VoiceRecorder({
       mode: sttRef.current.mode,
+      deviceId: sttRef.current.micDeviceId || undefined,
       onSegment: transcribeSegment,
       onLevel: setLevel,
+      speechThreshold: sttRef.current.vadThreshold || undefined,
       onError: (m) => {
         setError(m);
         setStatus("error");
@@ -141,10 +122,12 @@ export function useVoice(onText: (text: string) => void): UseVoice {
     setActive(true);
     setStatus("recording");
     await rec.start();
-  }, [transcribeSegment]);
+    // The grant during start() unlocks device labels — refresh the picker.
+    void refreshDevices();
+  }, [transcribeSegment, refreshDevices]);
 
   // Stop capturing if the component using the hook unmounts.
   useEffect(() => () => stop(), [stop]);
 
-  return { status, active, level, error, setError, engine, refreshStatus, start, stop };
+  return { status, active, level, error, setError, ready, start, stop, devices, refreshDevices };
 }

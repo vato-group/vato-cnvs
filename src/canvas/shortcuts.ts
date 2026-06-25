@@ -1,41 +1,49 @@
 import { useEffect } from "react";
 import { useStore } from "../store";
-import { toggleFocusMode, selectTool, type ToolType } from "./canvasState";
-import type { CliId } from "../types";
+import { bus } from "../lib/bus";
+import { gt } from "../i18n";
+import { setFocusMode, toggleFocusMode, selectTool, type ToolType } from "./canvasState";
+import type { CliId, FocusFilter } from "../types";
 
+/**
+ * A bindable action. `group` is an i18n group key ("tools", "agents", …); the
+ * human label is looked up at render time via `action.<id>` so the shortcuts
+ * list follows the app language.
+ */
 export interface ActionDef {
   id: string;
-  label: string;
   group: string;
 }
 
 export const ACTION_DEFS: ActionDef[] = [
-  { id: "tool.selection", label: "Outil — Sélection", group: "Outils" },
-  { id: "tool.hand", label: "Outil — Main (déplacer)", group: "Outils" },
-  { id: "tool.rectangle", label: "Outil — Rectangle", group: "Outils" },
-  { id: "tool.diamond", label: "Outil — Losange", group: "Outils" },
-  { id: "tool.ellipse", label: "Outil — Cercle", group: "Outils" },
-  { id: "tool.arrow", label: "Outil — Flèche", group: "Outils" },
-  { id: "tool.line", label: "Outil — Ligne", group: "Outils" },
-  { id: "tool.freedraw", label: "Outil — Dessin", group: "Outils" },
-  { id: "tool.text", label: "Outil — Texte", group: "Outils" },
-  { id: "tool.image", label: "Outil — Image", group: "Outils" },
-  { id: "tool.eraser", label: "Outil — Gomme", group: "Outils" },
-  { id: "agent.claude", label: "Nouvel agent — Claude Code", group: "Agents" },
-  { id: "agent.codex", label: "Nouvel agent — Codex", group: "Agents" },
-  { id: "agent.cursor", label: "Nouvel agent — Cursor", group: "Agents" },
-  { id: "agent.opencode", label: "Nouvel agent — OpenCode", group: "Agents" },
-  { id: "agent.shell", label: "Nouveau terminal — Shell", group: "Agents" },
-  { id: "pane.browser", label: "Nouveau navigateur", group: "Disposition" },
-  { id: "layout.tile", label: "Mode focus — grille / dispersé", group: "Disposition" },
-  { id: "view.focus", label: "Mode focus — regrouper / disperser", group: "Disposition" },
-  { id: "window.close", label: "Fermer la fenêtre active", group: "Fenêtre" },
-  { id: "window.fullscreen", label: "Plein écran de la fenêtre active", group: "Fenêtre" },
-  { id: "workspace.new", label: "Nouveau workspace", group: "Espaces" },
-  { id: "workspace.next", label: "Workspace suivant", group: "Espaces" },
-  { id: "workspace.prev", label: "Workspace précédent", group: "Espaces" },
-  { id: "workspace.overview", label: "Vue d'ensemble des workspaces", group: "Espaces" },
-  { id: "settings.open", label: "Ouvrir les réglages", group: "Application" },
+  { id: "tool.selection", group: "tools" },
+  { id: "tool.hand", group: "tools" },
+  { id: "tool.rectangle", group: "tools" },
+  { id: "tool.diamond", group: "tools" },
+  { id: "tool.ellipse", group: "tools" },
+  { id: "tool.arrow", group: "tools" },
+  { id: "tool.line", group: "tools" },
+  { id: "tool.freedraw", group: "tools" },
+  { id: "tool.text", group: "tools" },
+  { id: "tool.image", group: "tools" },
+  { id: "tool.eraser", group: "tools" },
+  { id: "agent.claude", group: "agents" },
+  { id: "agent.codex", group: "agents" },
+  { id: "agent.cursor", group: "agents" },
+  { id: "agent.opencode", group: "agents" },
+  { id: "agent.shell", group: "agents" },
+  { id: "pane.browser", group: "layout" },
+  { id: "layout.tile", group: "layout" },
+  { id: "view.focus", group: "layout" },
+  { id: "view.focusFilter", group: "layout" },
+  { id: "window.close", group: "window" },
+  { id: "window.fullscreen", group: "window" },
+  { id: "workspace.new", group: "spaces" },
+  { id: "workspace.next", group: "spaces" },
+  { id: "workspace.prev", group: "spaces" },
+  { id: "workspace.overview", group: "spaces" },
+  { id: "settings.open", group: "app" },
+  { id: "voice.mic", group: "voice" },
 ];
 
 /** Serialize a keydown into a stable combo string, or null for a lone modifier. */
@@ -62,7 +70,6 @@ const PRETTY: Record<string, string> = {
   arrowleft: "←",
   arrowup: "↑",
   arrowdown: "↓",
-  space: "Espace",
   escape: "Esc",
 };
 
@@ -70,8 +77,28 @@ export function humanizeCombo(combo: string): string {
   if (!combo) return "—";
   return combo
     .split("+")
-    .map((p) => PRETTY[p] ?? (p.length === 1 ? p.toUpperCase() : p.charAt(0).toUpperCase() + p.slice(1)))
+    .map((p) =>
+      p === "space"
+        ? gt("kbd.space")
+        : PRETTY[p] ?? (p.length === 1 ? p.toUpperCase() : p.charAt(0).toUpperCase() + p.slice(1)),
+    )
     .join(" ");
+}
+
+/**
+ * Humanized current binding for an action, or "" when unbound. Reads the store
+ * directly (non-reactive); callers that must re-render on a rebind should also
+ * subscribe to `settings.shortcuts`.
+ */
+export function shortcutLabel(actionId: string): string {
+  const combo = useStore.getState().settings.shortcuts[actionId];
+  return combo ? humanizeCombo(combo) : "";
+}
+
+/** Append a binding to a tooltip, e.g. `Selection · Ctrl V`. */
+export function withShortcut(label: string, actionId: string): string {
+  const kbd = shortcutLabel(actionId);
+  return kbd ? `${label} · ${kbd}` : label;
 }
 
 function spawnAgent(cli: CliId) {
@@ -95,14 +122,27 @@ export function runAction(actionId: string) {
     // the drawings), or release them back to their free positions.
     case "layout.tile": return toggleFocusMode();
     case "view.focus": return toggleFocusMode();
+    // Cycle what the focus grid shows for the active space; enter focus if needed
+    // so the effect is always visible (the topbar segmented control mirrors it).
+    case "view.focusFilter": {
+      const order: FocusFilter[] = ["all", "agents", "terminals"];
+      const ws = s.workspaces.find((w) => w.id === s.activeId);
+      const next = order[(order.indexOf(ws?.focusFilter ?? "all") + 1) % order.length];
+      s.setFocusFilter(next);
+      setFocusMode(true); // guarded: no-op when already in focus
+      return;
+    }
     case "workspace.new": return s.openNewWorkspace();
     case "workspace.overview": return s.toggleGrid();
     case "settings.open": return s.toggleSettings();
+    // The mic lives in the VoiceBar component; signal it over the bus.
+    case "voice.mic": return bus.emit("voice:toggle");
     case "workspace.next":
     case "workspace.prev": {
+      const n = s.workspaces.length;
+      if (!n) return;
       const idx = s.workspaces.findIndex((w) => w.id === s.activeId);
       const delta = actionId === "workspace.next" ? 1 : -1;
-      const n = s.workspaces.length;
       const next = s.workspaces[(idx + delta + n) % n];
       return s.setActive(next.id);
     }
@@ -136,8 +176,11 @@ export function useShortcuts() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const st = useStore.getState();
-      // The settings modal owns the keyboard while open (incl. rebind capture).
-      if (st.showSettings) return;
+      // The settings modal AND the first-run onboarding own the keyboard while
+      // open (incl. inline rebind capture) — never fire a canvas action there.
+      // Exception: the onboarding's "practice" step deliberately re-enables them
+      // so the user can try shortcuts for real on the live canvas.
+      if (st.showSettings || (!st.onboardingDone && !st.onboardingPractice)) return;
 
       const combo = comboFromEvent(e);
       if (!combo) return;

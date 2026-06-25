@@ -1,55 +1,6 @@
-// Typed wrappers around the Rust STT commands + the download-progress event.
+// Typed wrappers around the OpenAI-backed Rust commands.
+// (Transcription + the chat/completions proxy used by the command interpreter.)
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { SttEngine } from "../types";
-
-export interface SttPaths {
-  dir: string;
-  models_dir: string;
-  whisper_dir: string;
-  parakeet_dir: string;
-}
-
-export interface EngineStatus {
-  engine: string;
-  binary: string | null;
-  binary_ready: boolean;
-  model: string | null;
-  model_ready: boolean;
-  ready: boolean;
-  note: string | null;
-}
-
-export interface DownloadProgress {
-  url: string;
-  received: number;
-  total: number;
-  done: boolean;
-  error: string | null;
-}
-
-export const sttPaths = () => invoke<SttPaths>("stt_paths");
-
-export const sttStatus = (engine: SttEngine, binary?: string, model?: string) =>
-  invoke<EngineStatus>("stt_status", {
-    engine,
-    binary: binary || null,
-    model: model || null,
-  });
-
-export const sttDownload = (url: string, dest: string) =>
-  invoke<void>("stt_download", { url, dest });
-
-/** One-click: download + extract the whisper.cpp x64 binary into stt/whisper/. */
-export const sttInstallWhisper = () => invoke<void>("stt_install_whisper");
-
-export interface TranscribeReq {
-  engine: SttEngine;
-  binary?: string;
-  model?: string;
-  lang?: string;
-  wavBase64: string;
-}
 
 export interface OpenAiReq {
   apiKey: string;
@@ -69,21 +20,31 @@ export const sttTranscribeOpenAI = (req: OpenAiReq) =>
     },
   });
 
-export const sttTranscribe = (req: TranscribeReq) =>
-  invoke<string>("stt_transcribe", {
-    args: {
-      engine: req.engine,
-      binary: req.binary || null,
-      model: req.model || null,
-      lang: req.lang || null,
-      wav_base64: req.wavBase64,
-    },
-  });
+/**
+ * Raw `POST /v1/chat/completions` proxy. `body` is the full request (model,
+ * messages, tools…). Returns the response JSON as a string — the caller (the
+ * voice-command interpreter) parses `tool_calls` and runs the loop.
+ */
+export const openaiChat = (apiKey: string, body: unknown): Promise<string> =>
+  invoke<string>("openai_chat", { args: { api_key: apiKey, body } });
 
-export const onDownloadProgress = (
-  cb: (p: DownloadProgress) => void,
-): Promise<UnlistenFn> => listen<DownloadProgress>("stt://download", (e) => cb(e.payload));
+/** Text-to-speech via OpenAI → base64 MP3 bytes (played by the caller). */
+export const openaiTTS = (apiKey: string, model: string, voice: string, input: string): Promise<string> =>
+  invoke<string>("openai_tts", { args: { api_key: apiKey, model, voice, input } });
 
-export const onInstallProgress = (
-  cb: (p: DownloadProgress) => void,
-): Promise<UnlistenFn> => listen<DownloadProgress>("stt://install", (e) => cb(e.payload));
+/** Ping OpenAI with a tiny chat request to check the key is valid/funded. */
+export async function validateKey(apiKey: string, model: string): Promise<{ ok: boolean; error?: string }> {
+  const key = apiKey.trim();
+  if (!key) return { ok: false, error: "Aucune clé" };
+  try {
+    const raw = await openaiChat(key, {
+      model: model || "gpt-4o-mini",
+      messages: [{ role: "user", content: "ping" }],
+    });
+    const data = JSON.parse(raw);
+    if (data?.error) return { ok: false, error: data.error?.message ?? "erreur" };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}

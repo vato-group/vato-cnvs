@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { useStore } from "../store";
 import type { WindowItem } from "../types";
+import { useT } from "../i18n";
 import { ArrowLeftIcon, ArrowRightIcon, RefreshIcon } from "../ui/icons";
 
 function normalizeUrl(input: string): string {
@@ -13,6 +14,7 @@ function normalizeUrl(input: string): string {
 }
 
 export function BrowserPane({ win }: { win: WindowItem }) {
+  const t = useT();
   const updateWindow = useStore((s) => s.updateWindow);
   const [src, setSrc] = useState(() => normalizeUrl(win.url || "http://localhost:5173"));
   const [input, setInput] = useState(src);
@@ -65,13 +67,13 @@ export function BrowserPane({ win }: { win: WindowItem }) {
   return (
     <div className="vato-browser">
       <div className="vato-browser-bar vato-no-drag">
-        <button className="vato-tb-btn" onClick={goBack} disabled={!back.current.length} title="Précédent">
+        <button className="vato-tb-btn" onClick={goBack} disabled={!back.current.length} title={t("browser.back")}>
           <ArrowLeftIcon size={15} />
         </button>
-        <button className="vato-tb-btn" onClick={goFwd} disabled={!fwd.current.length} title="Suivant">
+        <button className="vato-tb-btn" onClick={goFwd} disabled={!fwd.current.length} title={t("browser.forward")}>
           <ArrowRightIcon size={15} />
         </button>
-        <button className="vato-tb-btn" onClick={reload} title="Recharger">
+        <button className="vato-tb-btn" onClick={reload} title={t("browser.reload")}>
           <RefreshIcon size={15} />
         </button>
         <form className="vato-browser-form" onSubmit={(e) => { e.preventDefault(); navigate(input); }}>
@@ -79,7 +81,7 @@ export function BrowserPane({ win }: { win: WindowItem }) {
             className="vato-browser-input allow-select"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="URL ou localhost:port…"
+            placeholder={t("browser.urlPlaceholder")}
             spellCheck={false}
           />
         </form>

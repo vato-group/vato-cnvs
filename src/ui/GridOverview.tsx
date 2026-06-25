@@ -1,6 +1,7 @@
 import { useStore } from "../store";
 import { CLIS } from "../data/clis";
 import type { Background, WindowItem, Workspace } from "../types";
+import { useT } from "../i18n";
 import { CloseIcon, FocusIcon, PlusIcon, TrashIcon } from "./icons";
 
 function cardStyle(bg: Background): React.CSSProperties {
@@ -41,6 +42,7 @@ function WorkspaceCard({ ws, active, focused, canDelete }: {
   focused: boolean;
   canDelete: boolean;
 }) {
+  const t = useT();
   const setActive = useStore((s) => s.setActive);
   const removeWorkspace = useStore((s) => s.removeWorkspace);
   const terminals = ws.windows.filter((x) => x.kind === "terminal").length;
@@ -58,14 +60,14 @@ function WorkspaceCard({ ws, active, focused, canDelete }: {
       <MiniPreview windows={ws.windows} />
 
       {focused && (
-        <span className="vato-grid-card-tag" title="Mode focus actif dans cet espace">
-          <FocusIcon size={12} /> focus
+        <span className="vato-grid-card-tag" title={t("grid.focusActive")}>
+          <FocusIcon size={12} /> {t("grid.focusTag")}
         </span>
       )}
       {canDelete && (
         <button
           className="vato-grid-card-del"
-          title={`Supprimer « ${ws.name} »`}
+          title={t("grid.delete", { name: ws.name })}
           onClick={(e) => {
             e.stopPropagation();
             removeWorkspace(ws.id);
@@ -78,9 +80,9 @@ function WorkspaceCard({ ws, active, focused, canDelete }: {
       <div className="vato-grid-card-body">
         <div className="vato-grid-card-name">{ws.name}</div>
         <div className="vato-grid-card-meta">
-          {ws.windows.length} fenêtre{ws.windows.length > 1 ? "s" : ""}
+          {t("grid.windows", { n: ws.windows.length })}
           {" · "}
-          {terminals} terminal{terminals > 1 ? "s" : ""}
+          {t("grid.terminals", { n: terminals })}
         </div>
         {ws.cwd && <div className="vato-grid-card-cwd">{ws.cwd}</div>}
       </div>
@@ -89,6 +91,7 @@ function WorkspaceCard({ ws, active, focused, canDelete }: {
 }
 
 export function GridOverview() {
+  const t = useT();
   const workspaces = useStore((s) => s.workspaces);
   const activeId = useStore((s) => s.activeId);
   const focusByWorkspace = useStore((s) => s.focusByWorkspace);
@@ -100,7 +103,7 @@ export function GridOverview() {
     <div className="vato-grid-overlay">
       <div className="vato-grid-head">
         <span>Workspaces</span>
-        <button className="vato-tb-btn" onClick={() => toggleGrid(false)} title="Fermer">
+        <button className="vato-tb-btn" onClick={() => toggleGrid(false)} title={t("common.close")}>
           <CloseIcon size={16} />
         </button>
       </div>

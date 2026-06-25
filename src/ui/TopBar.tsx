@@ -2,10 +2,17 @@ import { useEffect, useState } from "react";
 import { useStore } from "../store";
 import { CLIS, CLI_ORDER } from "../data/clis";
 import { cliCheck } from "../pty";
+import { humanizeCombo } from "../canvas/shortcuts";
+import { useT } from "../i18n";
 import { Dropdown } from "./Dropdown";
-import { ChevronDownIcon, FolderIcon, GridIcon, PlusIcon, SettingsIcon } from "./icons";
+import { ChevronDownIcon, FocusIcon, FolderIcon, GridIcon, PlusIcon, SettingsIcon } from "./icons";
+
+/** Shortcut action id for spawning a given CLI from the menu, if any. */
+const cliShortcut = (id: string): string | undefined =>
+  id === "antigravity" ? undefined : `agent.${id}`;
 
 export function TopBar() {
+  const t = useT();
   const workspaces = useStore((s) => s.workspaces);
   const activeId = useStore((s) => s.activeId);
   const active = workspaces.find((w) => w.id === activeId) ?? workspaces[0];
@@ -14,7 +21,18 @@ export function TopBar() {
   const addTerminal = useStore((s) => s.addTerminal);
   const toggleGrid = useStore((s) => s.toggleGrid);
   const toggleSettings = useStore((s) => s.toggleSettings);
-  const openSettings = useStore((s) => s.openSettings);
+  const focusMode = useStore((s) => s.focusMode);
+  const setFocusFilter = useStore((s) => s.setFocusFilter);
+  const shortcuts = useStore((s) => s.settings.shortcuts);
+  const focusFilter = active?.focusFilter ?? "all";
+  const focusLabel =
+    focusFilter === "agents" ? t("common.agents") : focusFilter === "terminals" ? t("common.terminals") : t("common.all");
+
+  const kbd = (id?: string) => (id && shortcuts[id] ? humanizeCombo(shortcuts[id]) : "");
+  const tip = (label: string, id?: string) => {
+    const k = kbd(id);
+    return k ? `${label} · ${k}` : label;
+  };
 
   const [avail, setAvail] = useState<Record<string, boolean>>({});
   useEffect(() => {
@@ -48,7 +66,7 @@ export function TopBar() {
       >
         {(close) => (
           <div className="vato-menu">
-            <div className="vato-menu-label">Aller à</div>
+            <div className="vato-menu-label">{t("topbar.goTo")}</div>
             {workspaces.map((w) => (
               <button
                 key={w.id}
@@ -72,58 +90,96 @@ export function TopBar() {
               }}
             >
               <PlusIcon size={15} />
-              <span className="label">Nouveau workspace</span>
+              <span className="label">{t("topbar.newWorkspace")}</span>
+              {kbd("workspace.new") && <span className="muted">{kbd("workspace.new")}</span>}
             </button>
             <button
               className="vato-menu-item"
               onClick={() => {
-                openSettings("workspaces");
+                toggleGrid(true);
                 close();
               }}
             >
-              <SettingsIcon size={15} />
-              <span className="label">Gérer les workspaces…</span>
+              <GridIcon size={15} />
+              <span className="label">{t("topbar.manageWorkspaces")}</span>
+              {kbd("workspace.overview") && <span className="muted">{kbd("workspace.overview")}</span>}
             </button>
           </div>
         )}
       </Dropdown>
 
-      <div className="vato-ws-tabs">
-        {workspaces
-          .filter((w) => w.id !== activeId)
-          .map((w) => (
-            <button key={w.id} className="vato-ws-tab" onClick={() => setActive(w.id)} title={w.name}>
-              {w.name}
-            </button>
-          ))}
-        <button className="vato-ws-tab add" onClick={() => openNewWorkspace()} title="Nouveau workspace">
-          <PlusIcon size={14} />
-        </button>
-      </div>
-
-      <button className="vato-icon-btn" onClick={() => toggleGrid()} title="Vue d'ensemble des workspaces">
+      <button
+        className="vato-icon-btn"
+        onClick={() => toggleGrid()}
+        title={tip(t("topbar.workspacesOverview"), "workspace.overview")}
+      >
         <GridIcon size={16} />
       </button>
 
-      <button className="vato-icon-btn" onClick={() => toggleSettings()} title="Réglages (Ctrl ,)">
+      <button
+        className="vato-icon-btn"
+        onClick={() => toggleSettings()}
+        title={tip(t("topbar.settings"), "settings.open")}
+      >
         <SettingsIcon size={16} />
       </button>
+
+      {/* Focus-mode pane filter — choose what the grid shows for THIS workspace.
+          A compact dropdown (mirrors the workspace switcher), surfaced only in
+          focus mode where it has an effect; persisted per space. */}
+      {focusMode && (
+        <Dropdown
+          align="right"
+          width={188}
+          trigger={() => (
+            <button className="vato-ws-btn" title={tip(t("topbar.focusFilter"), "view.focusFilter")}>
+              <FocusIcon size={15} />
+              <span>{focusLabel}</span>
+              <ChevronDownIcon size={14} />
+            </button>
+          )}
+        >
+          {(close) => (
+            <div className="vato-menu">
+              <div className="vato-menu-label">{t("topbar.showInFocus")}</div>
+              {([
+                ["all", t("common.all")],
+                ["agents", t("common.agents")],
+                ["terminals", t("common.terminals")],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  className={`vato-menu-item ${focusFilter === value ? "on" : ""}`}
+                  onClick={() => {
+                    setFocusFilter(value);
+                    close();
+                  }}
+                >
+                  <span className="label">{label}</span>
+                  {focusFilter === value && <span className="muted">✓</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </Dropdown>
+      )}
 
       <Dropdown
         align="right"
         width={236}
         trigger={() => (
           <button className="vato-agent-btn">
-            <PlusIcon size={15} /> Agent
+            <PlusIcon size={15} /> {t("topbar.agent")}
           </button>
         )}
       >
         {(close) => (
           <div className="vato-menu">
-            <div className="vato-menu-label">Nouvel agent / terminal</div>
+            <div className="vato-menu-label">{t("topbar.newAgentTerminal")}</div>
             {CLI_ORDER.map((id) => {
               const c = CLIS[id];
               const ok = id === "shell" || avail[id];
+              const k = kbd(cliShortcut(id));
               return (
                 <button
                   key={id}
@@ -138,7 +194,11 @@ export function TopBar() {
                     <c.Icon size={16} />
                   </span>
                   <span className="label">{c.label}</span>
-                  {!ok && <span className="muted">indisponible</span>}
+                  {!ok ? (
+                    <span className="muted">{t("common.unavailable")}</span>
+                  ) : (
+                    k && <span className="muted">{k}</span>
+                  )}
                 </button>
               );
             })}
