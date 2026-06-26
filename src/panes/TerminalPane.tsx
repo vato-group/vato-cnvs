@@ -12,6 +12,7 @@ import {
   encodeUtf8,
   onPtyExit,
   onPtyOutput,
+  openExternal,
   ptyBacklog,
   ptyIsAlive,
   ptyResize,
@@ -52,6 +53,17 @@ export function TerminalPane({ win }: { win: WindowItem }) {
   // we don't loop: shell exit → stopped overlay (not another fallback).
   const shellFallbackActiveRef = useRef(false);
   const spawnShellFallbackRef = useRef<(() => Promise<void>) | null>(null);
+  // ---- smart-border activity tracking ----
+  const lastInputRef = useRef(0); // last keystroke time (ms) — echo suppression
+  const lastEnterRef = useRef(0); // last Enter time — a submit = real work expected
+  // False until the agent's startup paint goes quiet. While false the pane stays
+  // neutral (no active/finished flashes for an agent you haven't used yet).
+  const settledRef = useRef(false);
+  const startSettleTimer = useRef<number | undefined>(undefined);
+  // Whether this pane currently *is* an agent (spawn CLI or one launched inside a
+  // shell). Kept in a ref so the PTY output handler always sees the live value.
+  const isAgentRef = useRef(def.agent);
+  const prevAgentRef = useRef(def.agent);
 
   const [overlay, setOverlay] = useState<{ kind: "idle" | "stopped"; error?: string } | null>(null);
   const [paste, setPaste] = useState<{ thumb: string; cap: string; phase: "loading" | "ready" } | null>(null);
@@ -77,6 +89,54 @@ export function TerminalPane({ win }: { win: WindowItem }) {
     window.clearTimeout(finishedTimer.current);
     idleTimer.current = window.setTimeout(markFinished, 800);
   }, [setStatus, win.id, markFinished]);
+
+  // One output burst from the PTY. Decides whether it counts as the agent
+  // *working* (orange ring) or is just noise — startup paint, the echo of the
+  // user's own typing, or a plain shell's command output — that must leave the
+  // border neutral (no colour). This is the heart of the smart border.
+  const onActivity = useCallback(() => {
+    // Plain shells never use the smart border — only AI agents do. Launching
+    // `claude`/`codex` inside a shell flips isAgentRef (effect below) and from
+    // then on the same pane behaves like a spawned agent.
+    if (!isAgentRef.current) {
+      if (!settledRef.current) {
+        settledRef.current = true;
+        setStatus(win.id, "idle");
+      }
+      return;
+    }
+    // Startup: the agent paints its welcome screen on spawn. That isn't "work",
+    // so hold a neutral state and, once the paint goes quiet, settle to idle —
+    // never flashing active/finished for an agent the user hasn't talked to yet.
+    if (!settledRef.current) {
+      window.clearTimeout(startSettleTimer.current);
+      startSettleTimer.current = window.setTimeout(() => {
+        settledRef.current = true;
+        setStatus(win.id, "idle");
+      }, 700);
+      return;
+    }
+    // Echo of the user's own keystrokes (the TUI repaints its input box on every
+    // key) isn't agent work — suppress it so typing keeps the border at 0 colour.
+    // Output right after an Enter IS a submitted prompt → allowed through.
+    const now = Date.now();
+    if (now - lastInputRef.current < 140 && now - lastEnterRef.current > 140) return;
+    markActive();
+  }, [markActive, setStatus, win.id]);
+
+  // Keep the agent flag in sync with the *current* identity (spawn CLI, or one
+  // detected running inside the shell). When a plain shell turns into an agent,
+  // reset the settle phase so the agent's startup paint stays neutral instead of
+  // flashing "active" — visually it becomes an agent, behaviour included.
+  useEffect(() => {
+    const nowAgent = CLIS[win.runningCli ?? win.cli ?? "shell"].agent;
+    isAgentRef.current = nowAgent;
+    if (nowAgent && !prevAgentRef.current) {
+      settledRef.current = false;
+      setStatus(win.id, "starting");
+    }
+    prevAgentRef.current = nowAgent;
+  }, [win.runningCli, win.cli, setStatus, win.id]);
 
   // ---- detect an agent launched from inside the shell (input sniffing) ----
   // Buffer the command line the user types; on Enter, if its first token is a
@@ -120,7 +180,7 @@ export function TerminalPane({ win }: { win: WindowItem }) {
     subscribedRef.current = true;
     const offOut = await onPtyOutput(win.id, (bytes) => {
       writeRef.current?.(bytes);
-      markActive();
+      onActivity();
       // First output from an agent = there's now a conversation worth resuming.
       // Persist it so the next app start relaunches this pane in resume mode.
       if (def.agent && !resumableMarkedRef.current) {
@@ -147,7 +207,7 @@ export function TerminalPane({ win }: { win: WindowItem }) {
       }
     });
     unlistenRef.current.push(offOut, offExit);
-  }, [markActive, setStatus, updateWindow, def.agent, win.id]);
+  }, [onActivity, setStatus, updateWindow, def.agent, win.id]);
 
   // A full-screen TUI (Claude/Codex) only paints on a draw event. When a pane is
   // spawned while occluded (behind the resume dialog) or re-attached to a still-
@@ -180,10 +240,11 @@ export function TerminalPane({ win }: { win: WindowItem }) {
       return;
     }
     setOverlay(null);
+    settledRef.current = false;
     setStatus(win.id, "starting");
     const { cols, rows } = sizeRef.current;
     try {
-      await ptySpawn({ id: win.id, program: shellDef.program, args: shellDef.args, cwd: win.cwd, rows, cols });
+      await ptySpawn({ id: win.id, program: shellDef.program, args: shellDef.args, cwd: win.cwd, rows, cols, scopeHistory: true });
       nudgeRedraw();
     } catch (e) {
       startedRef.current = false;
@@ -215,6 +276,7 @@ export function TerminalPane({ win }: { win: WindowItem }) {
     await subscribe();
     setOverlay(null);
     updateWindow(win.id, { started: true });
+    settledRef.current = false;
     setStatus(win.id, "starting");
     const { cols, rows } = sizeRef.current;
     const cfg = win.cli ? useStore.getState().settings.cli[win.cli] : undefined;
@@ -233,7 +295,7 @@ export function TerminalPane({ win }: { win: WindowItem }) {
     dlog(`spawnNew args=[${args.join(" ")}] cwd=${win.cwd ?? "(none)"} resumable=${resumable} sid=${win.sessionId ?? "-"}`);
     const startedAt = Date.now();
     try {
-      await ptySpawn({ id: win.id, program: def.program, args, cwd: win.cwd, rows, cols });
+      await ptySpawn({ id: win.id, program: def.program, args, cwd: win.cwd, rows, cols, scopeHistory: !def.agent });
       dlog("ptySpawn ok");
       nudgeRedraw(); // ensure the TUI paints even if spawned while occluded (resume dialog)
       // CLIs we can't pre-assign an id to (Codex): discover it from disk so we
@@ -264,7 +326,11 @@ export function TerminalPane({ win }: { win: WindowItem }) {
     await subscribe();
     setOverlay(null);
     updateWindow(win.id, { started: true });
-    markFinished();
+    // Re-attaching to a still-running PTY: settle to a neutral border. If the
+    // agent is mid-task the next output burst flips it back to active; if it's
+    // idle (the common case) it stays at 0 colour instead of a false "finished".
+    settledRef.current = true;
+    setStatus(win.id, "idle");
     // Repaint the fresh xterm from the PTY's backlog. A full-screen TUI redraws
     // itself on the SIGWINCH below, but a plain shell never does — without the
     // replay it would stay black until the next keystroke ("noir au switch de
@@ -277,7 +343,7 @@ export function TerminalPane({ win }: { win: WindowItem }) {
     const { cols, rows } = sizeRef.current;
     ptyResize(win.id, rows, cols).catch(() => {});
     nudgeRedraw(); // belt-and-braces: force a TUI to repaint its alternate screen
-  }, [subscribe, nudgeRedraw, updateWindow, markFinished, win.id]);
+  }, [subscribe, nudgeRedraw, updateWindow, setStatus, win.id]);
 
   const resume = useCallback(async () => {
     if (startedRef.current) return;
@@ -295,7 +361,20 @@ export function TerminalPane({ win }: { win: WindowItem }) {
   }, [attach, spawnNew, win.autostart, win.started, win.id]);
 
   const term = useTerminal({
+    // A clicked link opens in our in-app browser pane; a double-clicked one in
+    // the real system browser. Ctrl/Cmd+click also opens in-app (instant).
+    onOpenLink: (uri, mode) => {
+      if (mode === "external") {
+        openExternal(uri).catch((e) => dlog(`openExternal failed: ${String(e)}`));
+      } else {
+        useStore.getState().addPane("browser", { url: uri });
+      }
+    },
     onData: (d) => {
+      // Timestamp keystrokes for the smart border's echo suppression. An Enter
+      // submits a prompt → the output that follows is real agent work.
+      lastInputRef.current = Date.now();
+      if (d.includes("\r") || d.includes("\n")) lastEnterRef.current = lastInputRef.current;
       if (startedRef.current) ptyWrite(win.id, encodeUtf8(d)).catch(() => {});
       feedSniffer(d);
     },
@@ -338,6 +417,7 @@ export function TerminalPane({ win }: { win: WindowItem }) {
       cancelCaptureRef.current = null;
       window.clearTimeout(idleTimer.current);
       window.clearTimeout(finishedTimer.current);
+      window.clearTimeout(startSettleTimer.current);
       pasteTimers.current.forEach((id) => window.clearTimeout(id));
     };
   }, []);

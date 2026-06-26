@@ -1,6 +1,6 @@
 [package]
 name = "vato-cnvs"
-version = "0.1.0"
+version = "0.1.1"
 description = "Vato Canvas — multi-agent CLI cockpit"
 authors = ["Vato"]
 edition = "2021"
@@ -28,6 +28,8 @@ which = "7"
 # enables `send_json` for the chat proxy.
 ureq = { version = "2", default-features = false, features = ["native-tls", "json"] }
 native-tls = "0.2"
+tauri-plugin-updater = "2.0.0-rc.4"
+tauri-plugin-process = "2.0.0-rc.1"
 
 # WebView2 plumbing — only used to turn off the browser accelerator keys
 # (Ctrl+D/Ctrl+P/Alt…) that otherwise make Windows play its system "ding" when a

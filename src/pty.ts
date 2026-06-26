@@ -19,6 +19,8 @@ export interface PtySpawnArgs {
   env?: Record<string, string>;
   rows: number;
   cols: number;
+  /** Scope this shell's command history to its cwd (per-directory recall). */
+  scopeHistory?: boolean;
 }
 
 export async function ptySpawn(a: PtySpawnArgs): Promise<void> {
@@ -68,6 +70,11 @@ export function cliCheck(program: string): Promise<boolean> {
 
 export function homeDir(): Promise<string | null> {
   return invoke<string | null>("home_dir");
+}
+
+/** Open an http(s) URL in the user's real system browser (double-click a link). */
+export function openExternal(url: string): Promise<void> {
+  return invoke<void>("open_external", { url });
 }
 
 export interface DirEntry {

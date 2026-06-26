@@ -55,6 +55,11 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signature de l'updater : la clé privée signe chaque artefact et
+          # génère le `latest.json` consommé par le plugin updater. Sans ces
+          # secrets, pas de `.sig` ni de `latest.json` → l'auto-update échoue.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Vato Canvas ${{ github.ref_name }}

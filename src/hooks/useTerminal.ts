@@ -34,6 +34,12 @@ export interface UseTerminalOpts {
   onData?: (data: string) => void;
   onResize?: (size: { cols: number; rows: number }) => void;
   onReady?: (term: Terminal) => void;
+  /**
+   * A link in the terminal was activated. `mode` is resolved from the click:
+   *   • "inApp"    → plain single click or Ctrl/Cmd+click → open in our browser pane
+   *   • "external" → double click → open in the real system browser
+   */
+  onOpenLink?: (uri: string, mode: "inApp" | "external") => void;
 }
 
 export function useTerminal(opts: UseTerminalOpts) {
@@ -58,7 +64,45 @@ export function useTerminal(opts: UseTerminalOpts) {
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
-    term.loadAddon(new WebLinksAddon());
+
+    // Link clicks: route through onOpenLink instead of the addon's default
+    // window.open (which Tauri blocks).
+    //   single click / Ctrl+click → in-app browser pane
+    //   double click              → real system browser
+    // xterm doesn't reliably set MouseEvent.detail to 2 on the 2nd click, so we
+    // detect the double-click ourselves by timing: the 1st click schedules an
+    // in-app open after DBL_MS; a 2nd click on the same URL within that window
+    // cancels it and opens the real browser instead. Hence a single click waits
+    // ~DBL_MS before opening (the price of distinguishing it from a double).
+    const DBL_MS = 400;
+    let linkTimer: number | undefined;
+    let lastClickAt = 0;
+    let lastUri = "";
+    const onLink = (event: MouseEvent, uri: string) => {
+      if (event.ctrlKey || event.metaKey) {
+        window.clearTimeout(linkTimer);
+        lastClickAt = 0;
+        cb.current.onOpenLink?.(uri, "inApp");
+        return;
+      }
+      const now = Date.now();
+      if (event.detail >= 2 || (uri === lastUri && now - lastClickAt < DBL_MS)) {
+        // Second click of a double → cancel the pending in-app open, go external.
+        window.clearTimeout(linkTimer);
+        lastClickAt = 0;
+        cb.current.onOpenLink?.(uri, "external");
+        return;
+      }
+      // First click: wait to see whether a second one lands before opening in-app.
+      lastClickAt = now;
+      lastUri = uri;
+      window.clearTimeout(linkTimer);
+      linkTimer = window.setTimeout(() => {
+        lastClickAt = 0;
+        cb.current.onOpenLink?.(uri, "inApp");
+      }, DBL_MS);
+    };
+    term.loadAddon(new WebLinksAddon(onLink));
     term.open(el);
 
     // Ctrl/Cmd+V = paste. By default xterm ALSO emits the \x16 (SYN) control byte
@@ -71,6 +115,18 @@ export function useTerminal(opts: UseTerminalOpts) {
     term.attachCustomKeyEventHandler((e) => {
       if (e.type === "keydown" && (e.ctrlKey || e.metaKey) && (e.key === "v" || e.key === "V")) {
         return false;
+      }
+      // Ctrl/Cmd+C: copy the selection when there is one, otherwise fall through
+      // as SIGINT (\x03) so a running command can still be interrupted. Returning
+      // false drops the keystroke (no \x03 emitted) — used only when we copied;
+      // with no selection we return true so the shell/agent gets the interrupt.
+      if (e.type === "keydown" && (e.ctrlKey || e.metaKey) && (e.key === "c" || e.key === "C")) {
+        const sel = term.getSelection();
+        if (sel) {
+          navigator.clipboard?.writeText(sel).catch(() => {});
+          return false;
+        }
+        return true;
       }
       return true;
     });
@@ -111,6 +167,7 @@ export function useTerminal(opts: UseTerminalOpts) {
     cb.current.onReady?.(term);
 
     return () => {
+      window.clearTimeout(linkTimer);
       ro.disconnect();
       dataSub.dispose();
       resizeSub.dispose();

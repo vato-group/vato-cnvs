@@ -64,6 +64,134 @@ pub struct SpawnArgs {
     pub env: Option<HashMap<String, String>>,
     pub rows: u16,
     pub cols: u16,
+    /// When set, and the program is a known interactive shell, scope its command
+    /// history to a per-`cwd` file so each terminal only recalls commands run in
+    /// its own directory instead of one machine-wide global history.
+    #[serde(default, alias = "scopeHistory")]
+    pub scope_history: Option<bool>,
+}
+
+/// The interactive shells whose per-directory history we know how to scope.
+enum ShellKind {
+    /// Windows PowerShell / pwsh — history lives in PSReadLine (`HistorySavePath`).
+    PowerShell,
+    /// bash / zsh / sh — history file is the `HISTFILE` environment variable.
+    Posix,
+}
+
+/// Classify a launch program as a shell we can scope, by its file stem
+/// (`C:\…\powershell.exe` -> `powershell`). Anything else (an AI agent CLI, a
+/// one-off command) returns None and is left untouched.
+fn detect_shell(program: &str) -> Option<ShellKind> {
+    let stem = std::path::Path::new(program)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(program)
+        .to_ascii_lowercase();
+    match stem.as_str() {
+        "powershell" | "pwsh" => Some(ShellKind::PowerShell),
+        "bash" | "zsh" | "sh" => Some(ShellKind::Posix),
+        _ => None,
+    }
+}
+
+/// Stable 32-bit FNV-1a hash (fixed seed -> same value across app runs, so a
+/// directory always maps to the same history file).
+fn fnv1a(s: &str) -> u32 {
+    let mut h: u32 = 0x811c_9dc5;
+    for b in s.bytes() {
+        h ^= b as u32;
+        h = h.wrapping_mul(0x0100_0193);
+    }
+    h
+}
+
+/// Per-app data directory (`%APPDATA%` on Windows, `$XDG_DATA_HOME` or
+/// `~/.local/share` elsewhere) where we keep the per-directory history files.
+fn data_dir() -> Option<std::path::PathBuf> {
+    #[cfg(windows)]
+    {
+        std::env::var("APPDATA").ok().map(std::path::PathBuf::from)
+    }
+    #[cfg(not(windows))]
+    {
+        if let Ok(x) = std::env::var("XDG_DATA_HOME") {
+            if !x.trim().is_empty() {
+                return Some(std::path::PathBuf::from(x));
+            }
+        }
+        std::env::var("HOME")
+            .ok()
+            .map(|h| std::path::PathBuf::from(h).join(".local/share"))
+    }
+}
+
+/// Absolute path of the history file dedicated to `cwd`. Readable basename +
+/// stable hash of the full path keeps it unique and filesystem-safe even for
+/// long or oddly-named directories. The parent dir is created here.
+fn shell_history_file(cwd: &str) -> Option<std::path::PathBuf> {
+    let dir = data_dir()?.join("vato-cnvs").join("shell-history");
+    std::fs::create_dir_all(&dir).ok()?;
+    // Hash case-insensitively on Windows so `C:\Foo` and `c:\foo` share one file.
+    #[cfg(windows)]
+    let hash = fnv1a(&cwd.to_lowercase());
+    #[cfg(not(windows))]
+    let hash = fnv1a(cwd);
+    let base: String = cwd
+        .rsplit(|c| c == '/' || c == '\\')
+        .find(|s| !s.is_empty())
+        .unwrap_or("dir")
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let base = if base.is_empty() { "dir".to_string() } else { base.to_lowercase() };
+    Some(dir.join(format!("{base}-{hash:08x}.txt")))
+}
+
+/// Point an interactive shell's command history at a per-`cwd` file. PowerShell
+/// gets an extra `-NoExit -Command "Set-PSReadLineOption -HistorySavePath …"`
+/// (run before the first interactive prompt, so up-arrow recall reads it);
+/// posix shells get a `HISTFILE` (+ size knobs) env. Returns any args to append
+/// and env vars to set. No-op for non-shell programs or a missing cwd.
+fn apply_history_scope(
+    program: &str,
+    cwd: &Option<String>,
+    args: &mut Vec<String>,
+    env_out: &mut Vec<(String, String)>,
+) {
+    let Some(cwd) = cwd.as_deref().filter(|c| !c.trim().is_empty()) else {
+        return;
+    };
+    let Some(kind) = detect_shell(program) else {
+        return;
+    };
+    let Some(file) = shell_history_file(cwd) else {
+        return;
+    };
+    let file = file.to_string_lossy().to_string();
+    match kind {
+        ShellKind::PowerShell => {
+            // Don't fight an explicit -Command/-File/-NoExit launch.
+            let occupied = args.iter().any(|a| {
+                let l = a.to_ascii_lowercase();
+                matches!(l.as_str(), "-command" | "-c" | "-file" | "-noexit")
+            });
+            if occupied {
+                return;
+            }
+            let esc = file.replace('\'', "''"); // ' is the only PS single-quote escape
+            args.push("-NoExit".into());
+            args.push("-Command".into());
+            args.push(format!("Set-PSReadLineOption -HistorySavePath '{esc}'"));
+        }
+        ShellKind::Posix => {
+            env_out.push(("HISTFILE".into(), file));
+            env_out.push(("HISTSIZE".into(), "10000".into()));
+            env_out.push(("SAVEHIST".into(), "10000".into()));
+            env_out.push(("HISTFILESIZE".into(), "10000".into()));
+        }
+    }
+    dbg_log(&format!("HISTORY_SCOPE program={program} cwd={cwd}"));
 }
 
 /// Resolve a program and wrap shims so they run interactively under the right
@@ -141,11 +269,22 @@ pub fn pty_spawn(
         })
         .map_err(|e| e.to_string())?;
 
-    let mut cmd = build_command(&args.program, &args.args);
+    // Scope shell history to the cwd before resolving the command (PowerShell
+    // needs the extra -Command arg baked in; posix shells get a HISTFILE env).
+    let mut spawn_args = args.args.clone();
+    let mut hist_env: Vec<(String, String)> = Vec::new();
+    if args.scope_history.unwrap_or(false) {
+        apply_history_scope(&args.program, &args.cwd, &mut spawn_args, &mut hist_env);
+    }
+
+    let mut cmd = build_command(&args.program, &spawn_args);
     if let Some(cwd) = &args.cwd {
         cmd.cwd(cwd);
     }
     cmd.env("TERM", "xterm-256color");
+    for (k, v) in &hist_env {
+        cmd.env(k, v);
+    }
     if let Some(env) = &args.env {
         for (k, v) in env {
             cmd.env(k, v);
@@ -154,7 +293,7 @@ pub fn pty_spawn(
 
     dbg_log(&format!(
         "SPAWN id={} program={} args={:?} cwd={:?} size={}x{}",
-        args.id, args.program, args.args, args.cwd, args.cols, args.rows
+        args.id, args.program, spawn_args, args.cwd, args.cols, args.rows
     ));
     let child = match pair.slave.spawn_command(cmd) {
         Ok(c) => c,

@@ -21,6 +21,38 @@ fn debug_log(line: String) {
     pty::dbg_log(&line);
 }
 
+/// Open an http(s) URL in the user's real system browser. Used when a terminal
+/// link is double-clicked (single/ctrl-click opens our in-app browser pane).
+/// Scheme-guarded so a terminal can't make us launch arbitrary protocols. On
+/// Windows we go through `rundll32 url.dll,FileProtocolHandler` rather than
+/// `cmd /c start` because the latter mangles `&` in query strings.
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    let lower = url.to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return Err("unsupported url scheme".into());
+    }
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("rundll32");
+        c.args(["url.dll,FileProtocolHandler", &url]);
+        c
+    };
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("open");
+        c.arg(&url);
+        c
+    };
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    let mut cmd = {
+        let mut c = std::process::Command::new("xdg-open");
+        c.arg(&url);
+        c
+    };
+    cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
 /// Return the user's home directory (default cwd for new terminals).
 #[tauri::command]
 fn home_dir() -> Option<String> {
@@ -198,8 +230,20 @@ pub fn run() {
 
     let state = Arc::new(PtyState::default());
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_process::init());
+
+    // The updater reads a `plugins.updater` config (endpoints + minisign pubkey)
+    // that only exists for signed release builds; initializing it in a dev build
+    // panics with "invalid type: null, expected struct Config". Auto-update is
+    // pointless in dev anyway, so only wire the plugin into release builds.
+    #[cfg(not(debug_assertions))]
+    {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+
+    builder
         .manage(state)
         .setup(|_app| {
             // Mute the Windows system "ding" that WebView2 emits on browser
@@ -221,6 +265,7 @@ pub fn run() {
             pty_is_alive,
             pty_backlog,
             cli_check,
+            open_external,
             home_dir,
             list_dir,
             debug_log,

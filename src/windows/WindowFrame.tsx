@@ -1,4 +1,4 @@
-import { memo, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Rnd } from "react-rnd";
 import { focusGridWindows, useStore } from "../store";
 import type { AgentStatus, WindowItem } from "../types";
@@ -75,6 +75,27 @@ function WindowFrameImpl({ win, rect, zoom, focusMode, fullscreen, hidden, isDra
   // True while the user is freely dragging this window (free mode) — kills the
   // position transition so it tracks the cursor instead of easing behind it.
   const [freeDragging, setFreeDragging] = useState(false);
+
+  // react-rnd caches `offsetFromParent` ONCE at mount (via getBoundingClientRect)
+  // and never refreshes it (we keep resizing off, its only other trigger). Our
+  // overlay parent sits at the viewport origin (inset:0) and carries the pan/zoom
+  // as a CSS transform, so the correct offset is ALWAYS {0,0}. But a window mounted
+  // while hidden (display:none → zero rect) or while the canvas was panned/zoomed
+  // caches a bogus offset, which then shifts its focus-mode tile by a few px
+  // ("défois les terminals/agents pas bien alignés"). Pin it to {0,0} so every tile
+  // lands exactly where computeTiles puts it, in any mount/visibility state.
+  const rndRef = useRef<Rnd | null>(null);
+  useEffect(() => {
+    const rnd = rndRef.current as unknown as
+      | { offsetFromParent?: { left: number; top: number }; forceUpdate: () => void }
+      | null;
+    if (!rnd?.offsetFromParent) return;
+    const off = rnd.offsetFromParent;
+    if (off.left !== 0 || off.top !== 0) {
+      rnd.offsetFromParent = { left: 0, top: 0 };
+      rnd.forceUpdate();
+    }
+  });
 
   const isTerminal = win.kind === "terminal";
   // Prefer the agent detected running *inside* the pane over the spawn CLI,
@@ -179,6 +200,7 @@ function WindowFrameImpl({ win, rect, zoom, focusMode, fullscreen, hidden, isDra
 
   return (
     <Rnd
+      ref={rndRef}
       scale={scale}
       position={position}
       size={size}
