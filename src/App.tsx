@@ -7,6 +7,7 @@ import { ShapeStylePanel } from "./ui/ShapeStylePanel";
 import { ZoomControl } from "./ui/ZoomControl";
 import { VoiceBar } from "./ui/VoiceBar";
 import { GridOverview } from "./ui/GridOverview";
+import { ControlCenter } from "./ui/ControlCenter";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import { ResumeDialog } from "./ui/ResumeDialog";
 import { NewWorkspaceDialog } from "./ui/NewWorkspaceDialog";
@@ -24,6 +25,7 @@ export default function App() {
   const activeWs = useActiveWorkspace();
   const activeId = useStore((s) => s.activeId);
   const showGrid = useStore((s) => s.showGrid);
+  const showControlCenter = useStore((s) => s.showControlCenter);
   const showSettings = useStore((s) => s.showSettings);
   const newWorkspaceOpen = useStore((s) => s.newWorkspaceOpen);
   const setFullscreen = useStore((s) => s.setFullscreen);
@@ -33,7 +35,14 @@ export default function App() {
   // First-run onboarding wizard (folder, background, shortcuts, voice, tips).
   const onboardingDone = useStore((s) => s.onboardingDone);
   // Show the resume prompt once at startup if last session left resumable agents.
-  const showResume = useStore((s) => !s.resumeDismissed && countResumableAgents(s) > 0);
+  // The snapshot is taken ONCE at mount (persisted state is already rehydrated by
+  // then): the prompt is strictly about agents from a PREVIOUS app session. Agents
+  // launched this session flip `resumable` on their first output — on an empty
+  // workspace that must NOT pop the prompt, so we gate on the startup snapshot.
+  const [hadResumableAtStartup] = useState(() => countResumableAgents(useStore.getState()) > 0);
+  const showResume = useStore(
+    (s) => hadResumableAtStartup && !s.resumeDismissed && countResumableAgents(s) > 0,
+  );
   // The voice bar is useless without an OpenAI key (cloud-only). Hide it until one
   // is configured — Settings stays reachable via the top bar / Ctrl+, to add it.
   const hasVoiceKey = useStore((s) => !!s.settings.stt.openaiKey.trim());
@@ -158,7 +167,40 @@ export default function App() {
         </div>
       )}
 
+      {/* Empty state: normal mode (not focus) and the workspace has no windows at
+          all — no terminals, no agents, nothing on the canvas. */}
+      {!focusMode && !fullscreenId && activeWs.windows.length === 0 && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1,
+          pointerEvents: "none",
+        }}>
+          <div style={{
+            background: "rgba(15,18,28,0.75)",
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 12,
+            padding: "18px 26px",
+            textAlign: "center",
+          }}>
+            <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 14, fontWeight: 500, marginBottom: 4 }}>
+              {t("canvas.emptyTitle")}
+            </div>
+            <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 12, marginBottom: 2 }}>
+              {t("canvas.emptyDesc")}
+            </div>
+            <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 12 }}>
+              {t("canvas.emptyHint")}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showGrid && <GridOverview />}
+      {showControlCenter && <ControlCenter />}
       {showSettings && <SettingsPanel />}
       {newWorkspaceOpen && <NewWorkspaceDialog />}
       {showResume && <ResumeDialog />}

@@ -1,7 +1,7 @@
 {
   "name": "vato-cnvs",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "Vato Canvas — an infinite-canvas cockpit to drive multiple AI coding CLIs at once.",
   "scripts": {

@@ -5,6 +5,7 @@ import type { Workspace } from "../types";
 import { useStore } from "../store";
 import { getExcalidrawApi, selectTool, setExcalidrawApi, selectionSignature, setFocusMode, useCanvasState, type ToolType } from "./canvasState";
 import { loadSceneFiles, pruneFiles, referencedFileIds, saveSceneFiles, type StoredFiles } from "./sceneFiles";
+import { attachAutocomplete } from "../autocomplete/attachAutocomplete";
 
 interface Props {
   workspace: Workspace;
@@ -86,6 +87,46 @@ export function ExcalidrawCanvas({ workspace }: Props) {
       persistRef.current();
       setExcalidrawApi(null);
       useCanvasState.getState().setReady(false);
+    };
+  }, []);
+
+  // Attach deterministic autocomplete to Excalidraw's text editor. Excalidraw
+  // mounts a `<textarea class="excalidraw-wysiwyg">` over the canvas while you
+  // edit a text element; we watch the DOM for it and wire the same popup the
+  // Notes pane uses. Detaches when the textarea is removed (text committed).
+  useEffect(() => {
+    const attached = new Map<HTMLTextAreaElement, () => void>();
+    const isWysiwyg = (n: Node): n is HTMLTextAreaElement =>
+      n instanceof HTMLTextAreaElement &&
+      (n.classList.contains("excalidraw-wysiwyg") || !!n.closest(".excalidraw"));
+    const findIn = (n: Node): HTMLTextAreaElement | null => {
+      if (isWysiwyg(n)) return n;
+      if (n instanceof Element) {
+        const q = n.querySelector("textarea.excalidraw-wysiwyg") as HTMLTextAreaElement | null;
+        if (q) return q;
+      }
+      return null;
+    };
+    const obs = new MutationObserver((muts) => {
+      for (const m of muts) {
+        m.addedNodes.forEach((n) => {
+          const el = findIn(n);
+          if (el && !attached.has(el)) attached.set(el, attachAutocomplete(el));
+        });
+        m.removedNodes.forEach((n) => {
+          const el = findIn(n);
+          if (el && attached.has(el)) {
+            attached.get(el)!();
+            attached.delete(el);
+          }
+        });
+      }
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      obs.disconnect();
+      attached.forEach((detach) => detach());
+      attached.clear();
     };
   }, []);
 

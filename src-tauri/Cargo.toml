@@ -1,6 +1,6 @@
 [package]
 name = "vato-cnvs"
-version = "0.1.1"
+version = "0.1.2"
 description = "Vato Canvas — multi-agent CLI cockpit"
 authors = ["Vato"]
 edition = "2021"

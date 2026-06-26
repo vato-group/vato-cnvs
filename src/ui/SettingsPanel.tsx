@@ -1,4 +1,5 @@
 ﻿import { useEffect, useState, type ReactNode } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { useStore } from "../store";
 import { CLIS, CLI_ORDER, buildCliArgs } from "../data/clis";
 import { BG_IMAGES, BG_PRESETS, BG_VIDEOS, type BgTemplate } from "../data/backgrounds";
@@ -7,6 +8,7 @@ import { LANGS as APP_LANGS, useT } from "../i18n";
 import type { Background, Workspace } from "../types";
 import { homeDir } from "../pty";
 import { validateKey } from "../voice/stt";
+import { browserTtsSupported, getBrowserVoices, speak, speakBrowser } from "../voice/speak";
 import { listMicDevices, primeMicPermission, type MicDevice } from "../voice/audio";
 import { TerminalTool } from "./toolIcons";
 import {
@@ -112,6 +114,15 @@ function VoiceSection() {
   const ready = !!stt.openaiKey.trim();
   const [test, setTest] = useState<{ state: "idle" | "testing" | "ok" | "bad"; msg?: string }>({ state: "idle" });
   const [devices, setDevices] = useState<MicDevice[]>([]);
+  // System voices for the free browser engine (load asynchronously).
+  const [sysVoices, setSysVoices] = useState<SpeechSynthesisVoice[]>([]);
+  useEffect(() => {
+    let alive = true;
+    void getBrowserVoices().then((v) => alive && setSysVoices(v));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Enumerate mics on open and whenever hardware changes. Labels need a prior
   // permission grant; the "Détecter" button forces one.
@@ -255,7 +266,7 @@ function VoiceSection() {
         </>
       )}
 
-      {/* ---- Spoken confirmation (TTS) ---- */}
+      {/* ---- Spoken replies (TTS) ---- */}
       <button
         className={`vato-menu-item toggle ${stt.tts ? "on" : ""}`}
         style={{ marginTop: 12 }}
@@ -265,18 +276,75 @@ function VoiceSection() {
         {t("settings.voice.ttsToggle")}
       </button>
       {stt.tts && (
-        <select
-          className="vato-input allow-select"
-          style={{ marginTop: 8 }}
-          value={stt.ttsVoice}
-          onChange={(e) => setStt({ ttsVoice: e.target.value })}
-        >
-          {TTS_VOICES.map((v) => (
-            <option key={v} value={v}>
-              {t("settings.voice.ttsVoice", { name: v })}
-            </option>
-          ))}
-        </select>
+        <>
+          {/* Engine: free system voices vs. OpenAI cloud. */}
+          <div className="vato-seg" style={{ marginTop: 8 }}>
+            <button
+              className={`vato-seg-btn ${stt.ttsEngine !== "openai" ? "on" : ""}`}
+              disabled={!browserTtsSupported()}
+              onClick={() => setStt({ ttsEngine: "browser" })}
+            >
+              {t("settings.voice.ttsEngineBrowser")}
+            </button>
+            <button
+              className={`vato-seg-btn ${stt.ttsEngine === "openai" ? "on" : ""}`}
+              onClick={() => setStt({ ttsEngine: "openai" })}
+            >
+              {t("settings.voice.ttsEngineOpenai")}
+            </button>
+          </div>
+
+          {stt.ttsEngine !== "openai" ? (
+            <>
+              <select
+                className="vato-input allow-select"
+                style={{ marginTop: 8 }}
+                value={stt.ttsBrowserVoice}
+                onChange={(e) => setStt({ ttsBrowserVoice: e.target.value })}
+              >
+                <option value="">{t("settings.voice.ttsVoiceAuto")}</option>
+                {sysVoices.map((v) => (
+                  <option key={v.voiceURI} value={v.voiceURI}>
+                    {v.name} ({v.lang})
+                  </option>
+                ))}
+              </select>
+              <div className="vato-stt-hint" style={{ marginTop: 6 }}>
+                {t("settings.voice.ttsBrowserHint")}
+              </div>
+            </>
+          ) : (
+            <>
+              <select
+                className="vato-input allow-select"
+                style={{ marginTop: 8 }}
+                value={stt.ttsVoice}
+                onChange={(e) => setStt({ ttsVoice: e.target.value })}
+              >
+                {TTS_VOICES.map((v) => (
+                  <option key={v} value={v}>
+                    {t("settings.voice.ttsVoice", { name: v })}
+                  </option>
+                ))}
+              </select>
+              <div className="vato-stt-hint" style={{ marginTop: 6 }}>
+                {t("settings.voice.ttsOpenaiHint")}
+              </div>
+            </>
+          )}
+
+          <button
+            className="vato-mini-btn"
+            style={{ marginTop: 8 }}
+            onClick={() =>
+              stt.ttsEngine === "openai"
+                ? void speak(t("settings.voice.ttsSample"))
+                : void speakBrowser(t("settings.voice.ttsSample"), stt.ttsBrowserVoice)
+            }
+          >
+            {t("settings.voice.ttsTest")}
+          </button>
+        </>
       )}
 
       {/* ---- OpenAI credentials & models ---- */}
@@ -577,6 +645,11 @@ function AboutSection() {
   const t = useT();
   const restartOnboarding = useStore((s) => s.restartOnboarding);
   const settingsCombo = useStore((s) => s.settings.shortcuts["settings.open"]);
+  // Real app version from tauri.conf.json, fetched at runtime instead of hardcoded.
+  const [version, setVersion] = useState("");
+  useEffect(() => {
+    getVersion().then(setVersion).catch(() => {});
+  }, []);
   return (
     <>
       <div className="vato-set-h">{t("settings.sec.about")}</div>
@@ -584,8 +657,7 @@ function AboutSection() {
         <img className="vato-about-logo" src="/logo.png" alt="Vato Canvas" draggable={false} />
         <div className="vato-about-title">Vato Canvas</div>
         <div className="vato-about-sub">{t("settings.about.tagline")}</div>
-        <div className="vato-about-row"><span>{t("settings.about.version")}</span><b>0.1.0</b></div>
-        <div className="vato-about-row"><span>{t("settings.about.stack")}</span><b>Tauri v2 · React · Excalidraw · xterm</b></div>
+        <div className="vato-about-row"><span>{t("settings.about.version")}</span><b>{version || "—"}</b></div>
         <div className="vato-about-row">
           <span>{t("settings.about.settingsShortcut")}</span>
           <b>{settingsCombo ? humanizeCombo(settingsCombo) : "—"}</b>

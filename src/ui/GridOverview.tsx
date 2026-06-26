@@ -14,6 +14,7 @@ function cardStyle(bg: Background): React.CSSProperties {
 /** Accent colour of a pane, for the mini layout preview. */
 function paneColor(win: WindowItem): string {
   if (win.kind === "browser") return "#5b8cff";
+  if (win.kind === "notes") return "#d9b365";
   const id = win.runningCli ?? win.cli ?? "shell";
   return CLIS[id]?.color ?? "#9aa4b2";
 }

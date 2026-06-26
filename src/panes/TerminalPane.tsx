@@ -23,7 +23,9 @@ import {
 import { bus } from "../lib/bus";
 import { attachPasteImage } from "../lib/clipboard";
 import { registerTermReader, serializeTerminal } from "../voice/termAccess";
+import { ChevronDownIcon } from "../ui/icons";
 import { gt, useT } from "../i18n";
+import { complete, learn, type Suggestion } from "../autocomplete/engine";
 
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 
@@ -66,6 +68,14 @@ export function TerminalPane({ win }: { win: WindowItem }) {
   const prevAgentRef = useRef(def.agent);
 
   const [overlay, setOverlay] = useState<{ kind: "idle" | "stopped"; error?: string } | null>(null);
+  // Plain shells: xterm owns the scrollback, so onScroll tells us precisely when
+  // we're pinned to the bottom. False as soon as the user scrolls up.
+  const [atBottom, setAtBottom] = useState(true);
+  // Agents (Claude/Codex…) run a full-screen TUI with mouse tracking: they grab
+  // the wheel for their OWN scrollback, so xterm's viewport never moves and
+  // onScroll never fires. We instead detect the wheel gesture at the DOM level
+  // and remember that the user scrolled up. Cleared on a jump-to-bottom click.
+  const [agentScrolledUp, setAgentScrolledUp] = useState(false);
   const [paste, setPaste] = useState<{ thumb: string; cap: string; phase: "loading" | "ready" } | null>(null);
   const pasteTimers = useRef<number[]>([]);
   const clearPaste = useCallback(() => {
@@ -73,6 +83,93 @@ export function TerminalPane({ win }: { win: WindowItem }) {
     pasteTimers.current = [];
     setPaste(null);
   }, []);
+
+  // ---- inline autocomplete (deterministic, offline) ----
+  // Track the partial WORD the user is currently typing, sniffed straight from
+  // their keystrokes — so it works for plain shells AND agent TUIs alike,
+  // independent of how the program echoes. Tab accepts the highlighted suggestion
+  // by writing its missing suffix to the PTY, exactly as if the user typed it.
+  const acWord = useRef("");
+  const acEsc = useRef(false);
+  const acSuggRef = useRef<Suggestion[]>([]);
+  const acActiveRef = useRef(0);
+  const [acSugg, setAcSugg] = useState<Suggestion[]>([]);
+  const [acActive, setAcActive] = useState(0);
+  const [acToken, setAcToken] = useState("");
+
+  const acClear = useCallback(() => {
+    if (!acSuggRef.current.length) return;
+    acSuggRef.current = [];
+    acActiveRef.current = 0;
+    setAcSugg([]);
+  }, []);
+
+  const acRefresh = useCallback(() => {
+    const list = acWord.current.length >= 2 ? complete(acWord.current, 6) : [];
+    acSuggRef.current = list;
+    acActiveRef.current = 0;
+    setAcSugg(list);
+    setAcActive(0);
+    setAcToken(acWord.current);
+  }, []);
+
+  // Rebuild the current word from the raw bytes the user sends to the PTY.
+  const feedAc = useCallback(
+    (data: string) => {
+      for (const ch of data) {
+        if (acEsc.current) {
+          // Inside an escape sequence (arrows, history, etc.) → abandon the word.
+          if (/[a-zA-Z~]/.test(ch)) acEsc.current = false;
+          acWord.current = "";
+        } else if (ch === "\x1b") {
+          acEsc.current = true;
+          acWord.current = "";
+        } else if (ch === "\r" || ch === "\n" || ch === "\x03" || ch === "\x15" || ch === "\t") {
+          acWord.current = ""; // submit / Ctrl-C / Ctrl-U / Tab → end the token
+        } else if (ch === "\x7f" || ch === "\b") {
+          acWord.current = acWord.current.slice(0, -1);
+        } else if (/[A-Za-z0-9_-]/.test(ch)) {
+          acWord.current += ch;
+        } else {
+          acWord.current = ""; // space / punctuation ends the token
+        }
+      }
+      acRefresh();
+    },
+    [acRefresh],
+  );
+
+  const acceptAc = useCallback(
+    (index?: number) => {
+      const list = acSuggRef.current;
+      if (!list.length || !startedRef.current) return false;
+      const s = list[index ?? acActiveRef.current] ?? list[0];
+      const suffix = s.text.slice(acWord.current.length);
+      if (suffix) ptyWrite(win.id, encodeUtf8(suffix)).catch(() => {});
+      learn(s.text);
+      acWord.current = s.text;
+      acClear();
+      return true;
+    },
+    [win.id, acClear],
+  );
+
+  // First crack at every terminal keydown (before xterm forwards it to the PTY).
+  // Tab accepts the top suggestion; Esc dismisses the popup but still reaches the
+  // program. Arrows are left alone so shell history keeps working.
+  const onTermKey = useCallback(
+    (e: KeyboardEvent) => {
+      if (!acSuggRef.current.length) return true;
+      if (e.key === "Tab") {
+        e.preventDefault();
+        acceptAc();
+        return false;
+      }
+      if (e.key === "Escape") acClear();
+      return true;
+    },
+    [acceptAc, acClear],
+  );
 
   // ---- intelligent-border state machine driven by output activity ----
   // Flip to the blue "finished" ring, then auto-clear it back to idle (no ring)
@@ -375,13 +472,18 @@ export function TerminalPane({ win }: { win: WindowItem }) {
       // submits a prompt → the output that follows is real agent work.
       lastInputRef.current = Date.now();
       if (d.includes("\r") || d.includes("\n")) lastEnterRef.current = lastInputRef.current;
-      if (startedRef.current) ptyWrite(win.id, encodeUtf8(d)).catch(() => {});
+      if (startedRef.current) {
+        ptyWrite(win.id, encodeUtf8(d)).catch(() => {});
+        feedAc(d);
+      }
       feedSniffer(d);
     },
+    onKeyEvent: onTermKey,
     onResize: ({ cols, rows }) => {
       sizeRef.current = { cols, rows };
       if (startedRef.current) ptyResize(win.id, rows, cols).catch(() => {});
     },
+    onScrollChange: setAtBottom,
     onReady: (t) => {
       writeRef.current = (d) => t.write(d);
       sizeRef.current = { cols: t.cols, rows: t.rows };
@@ -404,6 +506,16 @@ export function TerminalPane({ win }: { win: WindowItem }) {
   // read_terminal_context can ground a prompt in the agent's actual on-screen
   // state (cleaner than the raw PTY backlog of overlapping TUI frames).
   useEffect(() => registerTermReader(win.id, () => serializeTerminal(term.getTerm())), [win.id]);
+
+  // The control center "go to this agent" jump asks the pane to grab the keyboard
+  // (the jump also brings the window to front + warps the OS cursor onto it).
+  useEffect(() => {
+    return bus.on(`term:focus:${win.id}`, () => {
+      setLastActiveTerminal(win.id);
+      term.focus();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [win.id, setLastActiveTerminal]);
 
   // Drop listeners on unmount but DO NOT kill the PTY: switching workspaces
   // unmounts the pane, and we want the agent to keep running in the background.
@@ -454,6 +566,39 @@ export function TerminalPane({ win }: { win: WindowItem }) {
     };
   }, [handleImage, win.id]);
 
+  // Capture-phase wheel listener: for agents (which swallow the wheel for their
+  // own TUI scrollback, leaving xterm's onScroll silent), a scroll-up gesture is
+  // the only signal that history is hidden below — surface the jump button.
+  useEffect(() => {
+    const el = paneRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (isAgentRef.current && e.deltaY < 0) setAgentScrolledUp(true);
+    };
+    el.addEventListener("wheel", onWheel, { capture: true, passive: true });
+    return () => el.removeEventListener("wheel", onWheel, { capture: true } as EventListenerOptions);
+  }, []);
+
+  // The jump arrow shows when the running CLI is an agent and the user scrolled
+  // up (DOM-tracked), or — for plain shells — when xterm reports we left the
+  // bottom of its scrollback.
+  const runningDef = CLIS[win.runningCli ?? win.cli ?? "shell"];
+  const showJump = runningDef.agent ? agentScrolledUp : !atBottom;
+
+  // Send the running agent back to the live bottom. Ctrl+End (CSI 1;5F) is the
+  // de-facto "jump to bottom" key for TUI agents (it's what Claude Code shows in
+  // its own hint); harmless for any CLI that ignores it. scrollToBottom() covers
+  // the plain-shell / normal-buffer case.
+  const jumpToBottom = useCallback(() => {
+    term.scrollToBottom();
+    if (runningDef.agent && startedRef.current) {
+      ptyWrite(win.id, encodeUtf8("\x1b[1;5F")).catch(() => {});
+    }
+    setAgentScrolledUp(false);
+    term.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runningDef.agent, win.id]);
+
   return (
     <div
       ref={paneRef}
@@ -466,6 +611,18 @@ export function TerminalPane({ win }: { win: WindowItem }) {
     >
       <div ref={term.containerRef} style={{ position: "absolute", inset: 0, padding: "6px 6px 6px 8px" }} />
 
+      {showJump && (
+        <button
+          className="vato-scroll-bottom-btn vato-no-drag"
+          title={t("term.scrollToBottom")}
+          aria-label={t("term.scrollToBottom")}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={jumpToBottom}
+        >
+          <ChevronDownIcon size={18} />
+        </button>
+      )}
+
       {paste && (
         <div className="vato-paste-overlay">
           {paste.phase === "loading" ? (
@@ -476,6 +633,26 @@ export function TerminalPane({ win }: { win: WindowItem }) {
               <span className="cap">{paste.cap}</span>
             </>
           )}
+        </div>
+      )}
+
+      {acSugg.length > 0 && (
+        <div className="vato-ac-bar vato-no-drag" onMouseDown={(e) => e.stopPropagation()}>
+          {acSugg.map((s, i) => (
+            <button
+              key={s.text}
+              className={`vato-ac-chip${i === acActive ? " active" : ""}`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                acceptAc(i);
+                term.focus();
+              }}
+            >
+              <b>{s.text.slice(0, acToken.length)}</b>
+              {s.text.slice(acToken.length)}
+            </button>
+          ))}
+          <span className="vato-ac-hint">⇥</span>
         </div>
       )}
 

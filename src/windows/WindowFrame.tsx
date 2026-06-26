@@ -5,13 +5,14 @@ import type { AgentStatus, WindowItem } from "../types";
 import { CLIS } from "../data/clis";
 import { TerminalPane } from "../panes/TerminalPane";
 import { BrowserPane } from "../panes/BrowserPane";
+import { NotesPane } from "../panes/NotesPane";
 import { useDrag } from "../canvas/dragState";
 import { useSelection } from "../canvas/selectionState";
 import { useCanvasState } from "../canvas/canvasState";
 import { nearestSlotIndex, reorderIds } from "../canvas/tiling";
 import { humanizeCombo } from "../canvas/shortcuts";
 import { useT } from "../i18n";
-import { CloseIcon, GlobeIcon, MaximizeIcon, MinimizeIcon } from "../ui/icons";
+import { CloseIcon, GlobeIcon, MaximizeIcon, MinimizeIcon, PencilIcon } from "../ui/icons";
 
 function ringClass(status?: AgentStatus): string {
   switch (status) {
@@ -220,12 +221,19 @@ function WindowFrameImpl({ win, rect, zoom, focusMode, fullscreen, hidden, isDra
       onMouseDownCapture={onMouseDownCapture}
     >
       <div
+        data-win-id={win.id}
         className={`vato-window ${ringClass(isTerminal ? win.status : undefined)} ${isDragged ? "dragging" : ""} ${selected ? "selected" : ""}`}
         style={cli ? ({ ["--accent" as string]: cli.color } as React.CSSProperties) : undefined}
       >
         <div className="vato-titlebar">
           <span className="vato-tb-icon" style={cli ? { color: cli.color } : undefined}>
-            {isTerminal && cli ? <cli.Icon size={16} /> : <GlobeIcon size={16} />}
+            {isTerminal && cli ? (
+              <cli.Icon size={16} />
+            ) : win.kind === "notes" ? (
+              <PencilIcon size={15} />
+            ) : (
+              <GlobeIcon size={16} />
+            )}
           </span>
           <span className="vato-tb-title">{win.title}</span>
           {isTerminal && cli && <span className="vato-tb-sub">{cli.label}</span>}
@@ -254,6 +262,7 @@ function WindowFrameImpl({ win, rect, zoom, focusMode, fullscreen, hidden, isDra
         <div className="vato-body allow-select">
           {win.kind === "terminal" && <TerminalPane win={win} />}
           {win.kind === "browser" && <BrowserPane win={win} />}
+          {win.kind === "notes" && <NotesPane win={win} />}
         </div>
       </div>
     </Rnd>

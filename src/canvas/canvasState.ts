@@ -308,6 +308,27 @@ export function fitCanvasToContent() {
   excalidrawApi.updateScene({ appState: { zoom: { value: zoom }, scrollX, scrollY } });
 }
 
+/**
+ * Center the viewport on a single window at 100% zoom (scene coords). Used by the
+ * control center when it "goes to" an agent: the targeted pane lands centered and
+ * legible, regardless of where the canvas was panned/zoomed. Frameless window, so
+ * the DOM client origin matches the window origin — the centered pane's
+ * getBoundingClientRect then drives the OS-cursor warp.
+ */
+export function centerViewportOnWindow(win: { x: number; y: number; width: number; height: number }) {
+  if (!excalidrawApi) return;
+  const zoom = 1;
+  const cx = win.x + win.width / 2;
+  const cy = win.y + win.height / 2;
+  excalidrawApi.updateScene({
+    appState: {
+      zoom: { value: zoom },
+      scrollX: window.innerWidth / 2 / zoom - cx,
+      scrollY: window.innerHeight / 2 / zoom - cy,
+    },
+  });
+}
+
 /** Pan the viewport by a screen-space delta (used for shift+wheel). */
 export function panCanvasBy(deltaX: number, deltaY: number) {
   if (!excalidrawApi) return;

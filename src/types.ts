@@ -1,4 +1,4 @@
-export type PaneKind = "terminal" | "browser";
+export type PaneKind = "terminal" | "browser" | "notes";
 
 /** Drives the "intelligent border" colour. */
 export type AgentStatus = "idle" | "starting" | "active" | "finished" | "error";
@@ -34,6 +34,9 @@ export interface WindowItem {
 
   // browser-only
   url?: string;
+
+  // notes-only — the pane's plain-text content (persisted).
+  note?: string;
 }
 
 export type BackgroundKind = "color" | "image" | "video";
@@ -108,10 +111,17 @@ export interface SttSettings {
   requireWakeWord: boolean;
   /** The wake word to listen for (e.g. "vato"). */
   wakeWord: string;
-  /** Speak the assistant's confirmation aloud (OpenAI TTS). */
+  /** Speak the assistant's replies aloud. */
   tts: boolean;
+  /**
+   * TTS backend. "browser" = the system Web Speech voices (free, offline);
+   * "openai" = OpenAI cloud TTS (needs the key, higher quality, billed).
+   */
+  ttsEngine: "browser" | "openai";
   /** OpenAI TTS voice (alloy, echo, fable, onyx, nova, shimmer…). */
   ttsVoice: string;
+  /** Chosen system voice (`voiceURI`) for the browser engine; "" = auto by app language. */
+  ttsBrowserVoice: string;
 }
 
 export interface AppSettings {

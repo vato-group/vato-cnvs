@@ -5,7 +5,7 @@ import { cliCheck } from "../pty";
 import { humanizeCombo } from "../canvas/shortcuts";
 import { useT } from "../i18n";
 import { Dropdown } from "./Dropdown";
-import { ChevronDownIcon, FocusIcon, FolderIcon, GridIcon, PlusIcon, SettingsIcon } from "./icons";
+import { ChevronDownIcon, FocusIcon, FolderIcon, GridIcon, MonitorIcon, PlusIcon, SettingsIcon } from "./icons";
 
 /** Shortcut action id for spawning a given CLI from the menu, if any. */
 const cliShortcut = (id: string): string | undefined =>
@@ -20,6 +20,7 @@ export function TopBar() {
   const openNewWorkspace = useStore((s) => s.openNewWorkspace);
   const addTerminal = useStore((s) => s.addTerminal);
   const toggleGrid = useStore((s) => s.toggleGrid);
+  const toggleControlCenter = useStore((s) => s.toggleControlCenter);
   const toggleSettings = useStore((s) => s.toggleSettings);
   const focusMode = useStore((s) => s.focusMode);
   const setFocusFilter = useStore((s) => s.setFocusFilter);
@@ -114,6 +115,14 @@ export function TopBar() {
         title={tip(t("topbar.workspacesOverview"), "workspace.overview")}
       >
         <GridIcon size={16} />
+      </button>
+
+      <button
+        className="vato-icon-btn"
+        onClick={() => toggleControlCenter()}
+        title={tip(t("cc.open"), "control.open")}
+      >
+        <MonitorIcon size={16} />
       </button>
 
       <button

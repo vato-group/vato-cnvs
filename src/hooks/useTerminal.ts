@@ -35,11 +35,23 @@ export interface UseTerminalOpts {
   onResize?: (size: { cols: number; rows: number }) => void;
   onReady?: (term: Terminal) => void;
   /**
+   * Fired when the viewport scrolls. `atBottom` is false once the user has
+   * scrolled up (there's content below the fold), true again when pinned to the
+   * latest line. Drives the "scroll to bottom" arrow.
+   */
+  onScrollChange?: (atBottom: boolean) => void;
+  /**
    * A link in the terminal was activated. `mode` is resolved from the click:
    *   • "inApp"    → plain single click or Ctrl/Cmd+click → open in our browser pane
    *   • "external" → double click → open in the real system browser
    */
   onOpenLink?: (uri: string, mode: "inApp" | "external") => void;
+  /**
+   * First crack at a keydown, before xterm sends anything to the PTY. Return
+   * false to swallow the key (we handled it — e.g. accepting an autocomplete
+   * suggestion on Tab); return true to let it through as normal.
+   */
+  onKeyEvent?: (e: KeyboardEvent) => boolean;
 }
 
 export function useTerminal(opts: UseTerminalOpts) {
@@ -113,6 +125,10 @@ export function useTerminal(opts: UseTerminalOpts) {
     // the \x16 WITHOUT preventDefault, so the native paste still fires: xterm
     // pastes text, and the pane's image handler catches pasted images as before.
     term.attachCustomKeyEventHandler((e) => {
+      // Let the pane intercept a keydown first (autocomplete accept/navigate).
+      if (e.type === "keydown" && cb.current.onKeyEvent?.(e) === false) {
+        return false;
+      }
       if (e.type === "keydown" && (e.ctrlKey || e.metaKey) && (e.key === "v" || e.key === "V")) {
         return false;
       }
@@ -154,6 +170,13 @@ export function useTerminal(opts: UseTerminalOpts) {
 
     const dataSub = term.onData((d) => cb.current.onData?.(d));
     const resizeSub = term.onResize((s) => cb.current.onResize?.(s));
+    // Report scroll position so the pane can show its "jump to bottom" arrow.
+    // viewportY is the top visible row; baseY is that row when pinned to the
+    // newest line — equal means we're at the bottom.
+    const scrollSub = term.onScroll(() => {
+      const b = term.buffer.active;
+      cb.current.onScrollChange?.(b.viewportY >= b.baseY);
+    });
 
     const ro = new ResizeObserver(() => {
       try {
@@ -171,6 +194,7 @@ export function useTerminal(opts: UseTerminalOpts) {
       ro.disconnect();
       dataSub.dispose();
       resizeSub.dispose();
+      scrollSub.dispose();
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
@@ -189,6 +213,7 @@ export function useTerminal(opts: UseTerminalOpts) {
       }
     },
     focus: () => termRef.current?.focus(),
+    scrollToBottom: () => termRef.current?.scrollToBottom(),
     getTerm: () => termRef.current,
   };
 }

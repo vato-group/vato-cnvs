@@ -20,7 +20,7 @@ import {
   TerminalTool,
   TextTool,
 } from "./toolIcons";
-import { FocusIcon } from "./icons";
+import { FocusIcon, PencilIcon } from "./icons";
 
 interface ToolDef {
   type: ToolType;
@@ -150,6 +150,10 @@ export function LeftToolbar() {
         onClick={() => addPane("browser")}
       >
         <BrowserTool size={19} />
+      </button>
+
+      <button className="vato-tool" title={t("toolbar.notes")} onClick={() => addPane("notes")}>
+        <PencilIcon size={18} />
       </button>
 
       <div className="vato-tool-sep" />

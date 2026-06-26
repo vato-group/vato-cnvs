@@ -51,6 +51,8 @@ const BASE_SHORTCUTS: Record<string, string> = {
   "workspace.next": "ctrl+alt+arrowright",
   "workspace.prev": "ctrl+alt+arrowleft",
   "workspace.overview": "ctrl+shift+g",
+  // Compact control center (all agents/terminals across every workspace).
+  "control.open": "ctrl+k",
   "window.close": "ctrl+w",
   "window.fullscreen": "f11",
   "settings.open": "ctrl+,",
@@ -88,8 +90,10 @@ export const DEFAULT_STT: SttSettings = {
   vadThreshold: 0.014,
   requireWakeWord: false,
   wakeWord: "vato",
-  tts: false,
+  tts: true,
+  ttsEngine: "browser",
   ttsVoice: "alloy",
+  ttsBrowserVoice: "",
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -175,6 +179,12 @@ export interface AppState {
   /** The "new workspace" folder-picker dialog is open (transient). */
   newWorkspaceOpen: boolean;
   showGrid: boolean;
+  /**
+   * The compact "control center" palette is open (transient, not persisted). It
+   * lists every agent/terminal across ALL workspaces, with filtering + a shortcut
+   * to jump straight to one (switch space, focus it, drop the cursor on it).
+   */
+  showControlCenter: boolean;
   showSettings: boolean;
   settingsSection: string;
   lastActiveTerminalId: string | null;
@@ -199,6 +209,9 @@ export interface AppState {
   completeOnboarding: () => void;
   restartOnboarding: () => void;
   setOnboardingPractice: (v: boolean) => void;
+
+  // control center
+  toggleControlCenter: (v?: boolean) => void;
 
   // settings
   toggleSettings: (v?: boolean) => void;
@@ -293,6 +306,7 @@ export const useStore = create<AppState>()(
       focusByWorkspace: {},
       newWorkspaceOpen: false,
       showGrid: false,
+      showControlCenter: false,
       showSettings: false,
       settingsSection: "agents",
       lastActiveTerminalId: null,
@@ -306,6 +320,8 @@ export const useStore = create<AppState>()(
       // The folder step is skipped when a workspace already exists (see Onboarding).
       restartOnboarding: () => set({ onboardingDone: false, showSettings: false }),
       setOnboardingPractice: (v) => set({ onboardingPractice: v }),
+
+      toggleControlCenter: (v) => set((s) => ({ showControlCenter: v ?? !s.showControlCenter })),
 
       toggleSettings: (v) => set((s) => ({ showSettings: v ?? !s.showSettings })),
 
@@ -443,19 +459,21 @@ export const useStore = create<AppState>()(
         const id = crypto.randomUUID();
         set((s) =>
           mapActive(s, (w) => {
-            const width = 760;
-            const height = 540;
+            const isNotes = kind === "notes";
+            const width = isNotes ? 460 : 760;
+            const height = isNotes ? 360 : 540;
             const pos = spawnRectNear(width, height, w.windows);
             const win: WindowItem = {
               id,
               kind,
-              title: "Browser",
+              title: isNotes ? "Notes" : "Browser",
               x: pos.x,
               y: pos.y,
               width,
               height,
               z: maxZ(w) + 1,
-              url: opts?.url ?? "http://localhost:5173",
+              // Only a browser carries a URL; notes start empty.
+              ...(kind === "browser" ? { url: opts?.url ?? "http://localhost:5173" } : {}),
               ...opts,
             };
             return { ...w, windows: [...w.windows, win] };

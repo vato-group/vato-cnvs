@@ -73,6 +73,8 @@ const fr: Dict = {
   "toolbar.newAgent": "Nouvel agent",
   "toolbar.newTerminalAgent": "Nouveau terminal / agent",
   "toolbar.browser": "Navigateur intégré",
+  "toolbar.notes": "Note — bloc-texte avec autocomplétion",
+  "notes.placeholder": "Écrivez ici… (Tab pour compléter)",
   "toolbar.focusEnter": "Focus — regrouper terminaux, agents et navigateurs en grille",
   "toolbar.focusExit": "Quitter le focus — disperser les fenêtres",
 
@@ -144,8 +146,16 @@ const fr: Dict = {
   "settings.voice.micDetect": "Détecter",
   "settings.voice.micDeviceHint":
     "Choisissez l'entrée audio. Laissez « Micro par défaut » pour suivre le système. Si l'app indique un micro occupé, sélectionnez-en un autre ici.",
-  "settings.voice.ttsToggle": "Confirmation parlée (TTS) — Vato lit sa réponse à voix haute",
+  "settings.voice.ttsToggle": "Réponses parlées (TTS) — Vato lit ses réponses à voix haute",
   "settings.voice.ttsVoice": (v) => `Voix : ${v.name}`,
+  "settings.voice.ttsEngineBrowser": "Gratuit (voix système)",
+  "settings.voice.ttsEngineOpenai": "OpenAI (cloud)",
+  "settings.voice.ttsVoiceAuto": "Voix automatique (langue de l'app)",
+  "settings.voice.ttsBrowserHint":
+    "Voix du système, gratuites et hors-ligne. La liste dépend des voix installées sur votre ordinateur.",
+  "settings.voice.ttsOpenaiHint": "Qualité supérieure, via le cloud OpenAI (facturé, nécessite la clé).",
+  "settings.voice.ttsSample": "Bonjour, je suis Vato. Voici un aperçu de ma voix.",
+  "settings.voice.ttsTest": "Tester la voix",
 
   // settings — language
   "settings.language.h": "Langue de l'application",
@@ -192,7 +202,6 @@ const fr: Dict = {
   "settings.about.tagline":
     "Cockpit multi-agents sur canvas infini — pilotez plusieurs CLI d'IA, un navigateur intégré et un tableau blanc, en fenêtres tuilées.",
   "settings.about.version": "Version",
-  "settings.about.stack": "Stack",
   "settings.about.settingsShortcut": "Raccourci réglages",
 
   // action labels (shortcuts list)
@@ -222,6 +231,7 @@ const fr: Dict = {
   "action.workspace.next": "Workspace suivant",
   "action.workspace.prev": "Workspace précédent",
   "action.workspace.overview": "Vue d'ensemble des workspaces",
+  "action.control.open": "Centre de contrôle",
   "action.settings.open": "Ouvrir les réglages",
   "action.voice.mic": "Micro vocal — parler / activer l'écoute",
 
@@ -239,6 +249,11 @@ const fr: Dict = {
   "focus.emptyTerminals": "Aucun terminal shell dans ce workspace",
   "focus.emptyAll": "Ce workspace est vide",
   "focus.emptyHint": "Créez-en un via + Agent",
+
+  // empty canvas (normal mode, no windows at all)
+  "canvas.emptyTitle": "Ce canevas est vide",
+  "canvas.emptyDesc": "Aucun terminal ni aucun élément ici.",
+  "canvas.emptyHint": "Créez-en un via + Agent ou + Terminal.",
 
   // background preset names
   "bg.mistyValley": "Vallée brumeuse",
@@ -293,6 +308,22 @@ const fr: Dict = {
   "grid.windows": (v) => `${v.n} fenêtre${(v.n as number) > 1 ? "s" : ""}`,
   "grid.terminals": (v) => `${v.n} terminal${(v.n as number) > 1 ? "aux" : ""}`,
 
+  // control center (compact)
+  "cc.title": "Centre de contrôle",
+  "cc.placeholder": "Rechercher un agent ou un terminal…",
+  "cc.running": "Actifs",
+  "cc.empty": "Aucun agent ni terminal ouvert",
+  "cc.emptyHint": "Créez-en un via + Agent ou les raccourcis Ctrl+1…5",
+  "cc.noResults": "Aucun résultat pour ce filtre",
+  "cc.nav": "↑↓ naviguer · Entrée ouvrir · Échap fermer",
+  "cc.open": "Centre de contrôle — tous les agents & terminaux",
+  "cc.st.starting": "Démarrage…",
+  "cc.st.active": "En cours",
+  "cc.st.finished": "En attente de révision",
+  "cc.st.error": "Erreur",
+  "cc.summary": (v) =>
+    `${v.agents} agent${(v.agents as number) > 1 ? "s" : ""} · ${v.terms} terminal${(v.terms as number) > 1 ? "aux" : ""} · ${v.spaces} workspace${(v.spaces as number) > 1 ? "s" : ""}`,
+
   // zoom control
   "zoom.aria": "Zoom du canvas",
   "zoom.fit": "Recadrer — tout ramener à l'écran",
@@ -306,6 +337,7 @@ const fr: Dict = {
   "term.start": (v) => `Démarrer ${v.label}`,
   "term.targetInactive": "Terminal cible inactif (démarrez-le d'abord)",
   "term.pastedImage": "image collée",
+  "term.scrollToBottom": "Défiler vers le bas",
 
   // app
   "app.exitFullscreen": "Quitter le plein écran (Esc)",
@@ -460,6 +492,8 @@ const en: Dict = {
   "toolbar.newAgent": "New agent",
   "toolbar.newTerminalAgent": "New terminal / agent",
   "toolbar.browser": "Built-in browser",
+  "toolbar.notes": "Note — text pad with autocomplete",
+  "notes.placeholder": "Write here… (Tab to complete)",
   "toolbar.focusEnter": "Focus — gather terminals, agents and browsers into a grid",
   "toolbar.focusExit": "Exit focus — scatter the windows",
 
@@ -527,8 +561,16 @@ const en: Dict = {
   "settings.voice.micDetect": "Detect",
   "settings.voice.micDeviceHint":
     "Pick the audio input. Leave “Default microphone” to follow the system. If the app reports the mic is busy, choose another one here.",
-  "settings.voice.ttsToggle": "Spoken confirmation (TTS) — Vato reads its reply aloud",
+  "settings.voice.ttsToggle": "Spoken replies (TTS) — Vato reads its replies aloud",
   "settings.voice.ttsVoice": (v) => `Voice: ${v.name}`,
+  "settings.voice.ttsEngineBrowser": "Free (system voices)",
+  "settings.voice.ttsEngineOpenai": "OpenAI (cloud)",
+  "settings.voice.ttsVoiceAuto": "Automatic voice (app language)",
+  "settings.voice.ttsBrowserHint":
+    "System voices, free and offline. The list depends on the voices installed on your computer.",
+  "settings.voice.ttsOpenaiHint": "Higher quality, via the OpenAI cloud (billed, needs the key).",
+  "settings.voice.ttsSample": "Hi, I'm Vato. Here's a preview of my voice.",
+  "settings.voice.ttsTest": "Test voice",
 
   "settings.language.h": "Application language",
   "settings.language.hint":
@@ -570,7 +612,6 @@ const en: Dict = {
   "settings.about.tagline":
     "Multi-agent cockpit on an infinite canvas — drive several AI CLIs, a built-in browser and a whiteboard, in tiled windows.",
   "settings.about.version": "Version",
-  "settings.about.stack": "Stack",
   "settings.about.settingsShortcut": "Settings shortcut",
 
   "action.tool.selection": "Tool — Selection",
@@ -599,6 +640,7 @@ const en: Dict = {
   "action.workspace.next": "Next workspace",
   "action.workspace.prev": "Previous workspace",
   "action.workspace.overview": "Workspaces overview",
+  "action.control.open": "Control center",
   "action.settings.open": "Open settings",
   "action.voice.mic": "Voice mic — talk / toggle listening",
 
@@ -615,6 +657,11 @@ const en: Dict = {
   "focus.emptyTerminals": "No shell terminals in this workspace",
   "focus.emptyAll": "This workspace is empty",
   "focus.emptyHint": "Create one via + Agent",
+
+  // empty canvas (normal mode, no windows at all)
+  "canvas.emptyTitle": "This canvas is empty",
+  "canvas.emptyDesc": "No terminal and no element here.",
+  "canvas.emptyHint": "Create one via + Agent or + Terminal.",
 
   "bg.mistyValley": "Misty valley",
   "bg.forest": "Forest",
@@ -664,6 +711,22 @@ const en: Dict = {
   "grid.windows": (v) => `${v.n} window${(v.n as number) > 1 ? "s" : ""}`,
   "grid.terminals": (v) => `${v.n} terminal${(v.n as number) > 1 ? "s" : ""}`,
 
+  // control center (compact)
+  "cc.title": "Control center",
+  "cc.placeholder": "Search an agent or terminal…",
+  "cc.running": "Running",
+  "cc.empty": "No agent or terminal open",
+  "cc.emptyHint": "Create one via + Agent or the Ctrl+1…5 shortcuts",
+  "cc.noResults": "No results for this filter",
+  "cc.nav": "↑↓ navigate · Enter open · Esc close",
+  "cc.open": "Control center — every agent & terminal",
+  "cc.st.starting": "Starting…",
+  "cc.st.active": "Running",
+  "cc.st.finished": "Awaiting review",
+  "cc.st.error": "Error",
+  "cc.summary": (v) =>
+    `${v.agents} agent${(v.agents as number) > 1 ? "s" : ""} · ${v.terms} terminal${(v.terms as number) > 1 ? "s" : ""} · ${v.spaces} workspace${(v.spaces as number) > 1 ? "s" : ""}`,
+
   "zoom.aria": "Canvas zoom",
   "zoom.fit": "Fit — bring everything on screen",
   "zoom.out": "Zoom out",
@@ -675,6 +738,7 @@ const en: Dict = {
   "term.start": (v) => `Start ${v.label}`,
   "term.targetInactive": "Target terminal inactive (start it first)",
   "term.pastedImage": "pasted image",
+  "term.scrollToBottom": "Scroll to bottom",
 
   "app.exitFullscreen": "Exit fullscreen (Esc)",
 
@@ -828,6 +892,8 @@ const nl: Dict = {
   "toolbar.newAgent": "Nieuwe agent",
   "toolbar.newTerminalAgent": "Nieuwe terminal / agent",
   "toolbar.browser": "Ingebouwde browser",
+  "toolbar.notes": "Notitie — tekstblok met autoaanvulling",
+  "notes.placeholder": "Schrijf hier… (Tab om aan te vullen)",
   "toolbar.focusEnter": "Focus — terminals, agents en browsers in een raster groeperen",
   "toolbar.focusExit": "Focus verlaten — vensters verspreiden",
 
@@ -895,8 +961,16 @@ const nl: Dict = {
   "settings.voice.micDetect": "Detecteren",
   "settings.voice.micDeviceHint":
     "Kies de audio-ingang. Laat “Standaardmicrofoon” staan om het systeem te volgen. Meldt de app dat de microfoon bezet is, kies dan hier een andere.",
-  "settings.voice.ttsToggle": "Gesproken bevestiging (TTS) — Vato leest zijn antwoord voor",
+  "settings.voice.ttsToggle": "Gesproken antwoorden (TTS) — Vato leest zijn antwoorden voor",
   "settings.voice.ttsVoice": (v) => `Stem: ${v.name}`,
+  "settings.voice.ttsEngineBrowser": "Gratis (systeemstemmen)",
+  "settings.voice.ttsEngineOpenai": "OpenAI (cloud)",
+  "settings.voice.ttsVoiceAuto": "Automatische stem (app-taal)",
+  "settings.voice.ttsBrowserHint":
+    "Systeemstemmen, gratis en offline. De lijst hangt af van de stemmen die op je computer zijn geïnstalleerd.",
+  "settings.voice.ttsOpenaiHint": "Hogere kwaliteit, via de OpenAI-cloud (gefactureerd, sleutel vereist).",
+  "settings.voice.ttsSample": "Hallo, ik ben Vato. Dit is een voorbeeld van mijn stem.",
+  "settings.voice.ttsTest": "Stem testen",
 
   "settings.language.h": "Applicatietaal",
   "settings.language.hint":
@@ -938,7 +1012,6 @@ const nl: Dict = {
   "settings.about.tagline":
     "Multi-agent cockpit op een oneindig canvas — bestuur meerdere AI-CLI's, een ingebouwde browser en een whiteboard, in getegelde vensters.",
   "settings.about.version": "Versie",
-  "settings.about.stack": "Stack",
   "settings.about.settingsShortcut": "Sneltoets instellingen",
 
   "action.tool.selection": "Gereedschap — Selectie",
@@ -967,6 +1040,7 @@ const nl: Dict = {
   "action.workspace.next": "Volgende workspace",
   "action.workspace.prev": "Vorige workspace",
   "action.workspace.overview": "Workspace-overzicht",
+  "action.control.open": "Bedieningscentrum",
   "action.settings.open": "Instellingen openen",
   "action.voice.mic": "Vocale microfoon — spreken / luisteren aan/uit",
 
@@ -983,6 +1057,11 @@ const nl: Dict = {
   "focus.emptyTerminals": "Geen shell-terminals in deze workspace",
   "focus.emptyAll": "Deze workspace is leeg",
   "focus.emptyHint": "Maak er een via + Agent",
+
+  // empty canvas (normal mode, no windows at all)
+  "canvas.emptyTitle": "Dit canvas is leeg",
+  "canvas.emptyDesc": "Geen terminal en geen element hier.",
+  "canvas.emptyHint": "Maak er een via + Agent of + Terminal.",
 
   "bg.mistyValley": "Mistige vallei",
   "bg.forest": "Bos",
@@ -1032,6 +1111,22 @@ const nl: Dict = {
   "grid.windows": (v) => `${v.n} venster${(v.n as number) > 1 ? "s" : ""}`,
   "grid.terminals": (v) => `${v.n} terminal${(v.n as number) > 1 ? "s" : ""}`,
 
+  // control center (compact)
+  "cc.title": "Bedieningscentrum",
+  "cc.placeholder": "Zoek een agent of terminal…",
+  "cc.running": "Actief",
+  "cc.empty": "Geen agent of terminal open",
+  "cc.emptyHint": "Maak er een via + Agent of de sneltoetsen Ctrl+1…5",
+  "cc.noResults": "Geen resultaten voor dit filter",
+  "cc.nav": "↑↓ navigeren · Enter openen · Esc sluiten",
+  "cc.open": "Bedieningscentrum — alle agents & terminals",
+  "cc.st.starting": "Starten…",
+  "cc.st.active": "Bezig",
+  "cc.st.finished": "Wacht op revisie",
+  "cc.st.error": "Fout",
+  "cc.summary": (v) =>
+    `${v.agents} agent${(v.agents as number) > 1 ? "s" : ""} · ${v.terms} terminal${(v.terms as number) > 1 ? "s" : ""} · ${v.spaces} workspace${(v.spaces as number) > 1 ? "s" : ""}`,
+
   "zoom.aria": "Canvaszoom",
   "zoom.fit": "Passend — alles in beeld brengen",
   "zoom.out": "Uitzoomen",
@@ -1043,6 +1138,7 @@ const nl: Dict = {
   "term.start": (v) => `${v.label} starten`,
   "term.targetInactive": "Doelterminal inactief (start hem eerst)",
   "term.pastedImage": "geplakte afbeelding",
+  "term.scrollToBottom": "Naar beneden scrollen",
 
   "app.exitFullscreen": "Volledig scherm verlaten (Esc)",
 

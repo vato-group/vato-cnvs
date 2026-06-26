@@ -42,6 +42,7 @@ export const ACTION_DEFS: ActionDef[] = [
   { id: "workspace.next", group: "spaces" },
   { id: "workspace.prev", group: "spaces" },
   { id: "workspace.overview", group: "spaces" },
+  { id: "control.open", group: "app" },
   { id: "settings.open", group: "app" },
   { id: "voice.mic", group: "voice" },
 ];
@@ -134,6 +135,7 @@ export function runAction(actionId: string) {
     }
     case "workspace.new": return s.openNewWorkspace();
     case "workspace.overview": return s.toggleGrid();
+    case "control.open": return s.toggleControlCenter();
     case "settings.open": return s.toggleSettings();
     // The mic lives in the VoiceBar component; signal it over the bus.
     case "voice.mic": return bus.emit("voice:toggle");
@@ -188,8 +190,15 @@ export function useShortcuts() {
       const actionId = Object.keys(shortcuts).find((id) => shortcuts[id] === combo);
       if (!actionId) return;
 
+      // The control center owns the keyboard while open (its own search box + arrow/
+      // enter navigation handle keys locally); only its toggle passes through so the
+      // same shortcut closes it again.
+      if (st.showControlCenter && actionId !== "control.open") return;
+
       // Don't steal keystrokes from text fields (settings/url bar/Excalidraw text).
-      if (actionId !== "settings.open" && isEditableTarget()) return;
+      // `settings.open`/`control.open` are exempt so their toggle still works while a
+      // field (incl. the control center's search box) holds focus.
+      if (actionId !== "settings.open" && actionId !== "control.open" && isEditableTarget()) return;
       // Tool single-keys must only act on the canvas, never while a pane is focused
       // (e.g. typing "r" in a terminal must reach the shell, not pick the rectangle).
       if (actionId.startsWith("tool.")) {

@@ -53,6 +53,20 @@ fn open_external(url: String) -> Result<(), String> {
     cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// Move the OS mouse cursor onto a point of the main window's client area. The
+/// coordinates are LOGICAL/CSS pixels relative to the window's top-left — exactly
+/// what `getBoundingClientRect()` returns in the WebView — so the control center
+/// can drop the pointer onto an agent it navigated to. Best-effort: any runtime
+/// that doesn't support cursor warping just returns an error the front swallows.
+#[tauri::command]
+fn move_cursor(app: tauri::AppHandle, x: f64, y: f64) -> Result<(), String> {
+    use tauri::Manager;
+    let window = app.get_webview_window("main").ok_or("no main window")?;
+    window
+        .set_cursor_position(tauri::LogicalPosition::new(x, y))
+        .map_err(|e| e.to_string())
+}
+
 /// Return the user's home directory (default cwd for new terminals).
 #[tauri::command]
 fn home_dir() -> Option<String> {
@@ -230,6 +244,9 @@ pub fn run() {
 
     let state = Arc::new(PtyState::default());
 
+    // `mut` is only used by the release-only updater block below; allow it so a
+    // debug build (where that block is cfg'd out) doesn't warn about unused mut.
+    #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_process::init());
@@ -266,6 +283,7 @@ pub fn run() {
             pty_backlog,
             cli_check,
             open_external,
+            move_cursor,
             home_dir,
             list_dir,
             debug_log,

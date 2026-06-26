@@ -77,6 +77,15 @@ export function openExternal(url: string): Promise<void> {
   return invoke<void>("open_external", { url });
 }
 
+/**
+ * Warp the OS mouse cursor onto a point of the window's client area (logical/CSS
+ * pixels, as from `getBoundingClientRect`). Used by the control center to drop
+ * the pointer on an agent it navigates to. No-op (silently) outside Tauri.
+ */
+export function moveCursor(x: number, y: number): Promise<void> {
+  return invoke<void>("move_cursor", { x, y }).catch(() => {});
+}
+
 export interface DirEntry {
   name: string;
   is_dir: boolean;

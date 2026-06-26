@@ -71,9 +71,11 @@ export function VoiceBar() {
   });
 
   // Auto-dismiss the result banner so the bar tucks back away in focus mode.
+  // Scale the delay to the reply length so a spoken summary stays readable.
   useEffect(() => {
     if (!result) return;
-    const timer = window.setTimeout(() => setResult(null), 6000);
+    const ms = Math.min(20000, Math.max(6000, result.length * 60));
+    const timer = window.setTimeout(() => setResult(null), ms);
     return () => window.clearTimeout(timer);
   }, [result]);
 
