@@ -73,8 +73,8 @@ const fr: Dict = {
   "toolbar.newAgent": "Nouvel agent",
   "toolbar.newTerminalAgent": "Nouveau terminal / agent",
   "toolbar.browser": "Navigateur intégré",
-  "toolbar.notes": "Note — bloc-texte avec autocomplétion",
-  "notes.placeholder": "Écrivez ici… (Tab pour compléter)",
+  "toolbar.notes": "Note — bloc-texte",
+  "notes.placeholder": "Écrivez ici…",
   "toolbar.focusEnter": "Focus — regrouper terminaux, agents et navigateurs en grille",
   "toolbar.focusExit": "Quitter le focus — disperser les fenêtres",
 
@@ -492,8 +492,8 @@ const en: Dict = {
   "toolbar.newAgent": "New agent",
   "toolbar.newTerminalAgent": "New terminal / agent",
   "toolbar.browser": "Built-in browser",
-  "toolbar.notes": "Note — text pad with autocomplete",
-  "notes.placeholder": "Write here… (Tab to complete)",
+  "toolbar.notes": "Note — text pad",
+  "notes.placeholder": "Write here…",
   "toolbar.focusEnter": "Focus — gather terminals, agents and browsers into a grid",
   "toolbar.focusExit": "Exit focus — scatter the windows",
 
@@ -892,8 +892,8 @@ const nl: Dict = {
   "toolbar.newAgent": "Nieuwe agent",
   "toolbar.newTerminalAgent": "Nieuwe terminal / agent",
   "toolbar.browser": "Ingebouwde browser",
-  "toolbar.notes": "Notitie — tekstblok met autoaanvulling",
-  "notes.placeholder": "Schrijf hier… (Tab om aan te vullen)",
+  "toolbar.notes": "Notitie — tekstblok",
+  "notes.placeholder": "Schrijf hier…",
   "toolbar.focusEnter": "Focus — terminals, agents en browsers in een raster groeperen",
   "toolbar.focusExit": "Focus verlaten — vensters verspreiden",
 

@@ -25,7 +25,6 @@ import { attachPasteImage } from "../lib/clipboard";
 import { registerTermReader, serializeTerminal } from "../voice/termAccess";
 import { ChevronDownIcon } from "../ui/icons";
 import { gt, useT } from "../i18n";
-import { complete, learn, type Suggestion } from "../autocomplete/engine";
 
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 
@@ -83,93 +82,6 @@ export function TerminalPane({ win }: { win: WindowItem }) {
     pasteTimers.current = [];
     setPaste(null);
   }, []);
-
-  // ---- inline autocomplete (deterministic, offline) ----
-  // Track the partial WORD the user is currently typing, sniffed straight from
-  // their keystrokes — so it works for plain shells AND agent TUIs alike,
-  // independent of how the program echoes. Tab accepts the highlighted suggestion
-  // by writing its missing suffix to the PTY, exactly as if the user typed it.
-  const acWord = useRef("");
-  const acEsc = useRef(false);
-  const acSuggRef = useRef<Suggestion[]>([]);
-  const acActiveRef = useRef(0);
-  const [acSugg, setAcSugg] = useState<Suggestion[]>([]);
-  const [acActive, setAcActive] = useState(0);
-  const [acToken, setAcToken] = useState("");
-
-  const acClear = useCallback(() => {
-    if (!acSuggRef.current.length) return;
-    acSuggRef.current = [];
-    acActiveRef.current = 0;
-    setAcSugg([]);
-  }, []);
-
-  const acRefresh = useCallback(() => {
-    const list = acWord.current.length >= 2 ? complete(acWord.current, 6) : [];
-    acSuggRef.current = list;
-    acActiveRef.current = 0;
-    setAcSugg(list);
-    setAcActive(0);
-    setAcToken(acWord.current);
-  }, []);
-
-  // Rebuild the current word from the raw bytes the user sends to the PTY.
-  const feedAc = useCallback(
-    (data: string) => {
-      for (const ch of data) {
-        if (acEsc.current) {
-          // Inside an escape sequence (arrows, history, etc.) → abandon the word.
-          if (/[a-zA-Z~]/.test(ch)) acEsc.current = false;
-          acWord.current = "";
-        } else if (ch === "\x1b") {
-          acEsc.current = true;
-          acWord.current = "";
-        } else if (ch === "\r" || ch === "\n" || ch === "\x03" || ch === "\x15" || ch === "\t") {
-          acWord.current = ""; // submit / Ctrl-C / Ctrl-U / Tab → end the token
-        } else if (ch === "\x7f" || ch === "\b") {
-          acWord.current = acWord.current.slice(0, -1);
-        } else if (/[A-Za-z0-9_-]/.test(ch)) {
-          acWord.current += ch;
-        } else {
-          acWord.current = ""; // space / punctuation ends the token
-        }
-      }
-      acRefresh();
-    },
-    [acRefresh],
-  );
-
-  const acceptAc = useCallback(
-    (index?: number) => {
-      const list = acSuggRef.current;
-      if (!list.length || !startedRef.current) return false;
-      const s = list[index ?? acActiveRef.current] ?? list[0];
-      const suffix = s.text.slice(acWord.current.length);
-      if (suffix) ptyWrite(win.id, encodeUtf8(suffix)).catch(() => {});
-      learn(s.text);
-      acWord.current = s.text;
-      acClear();
-      return true;
-    },
-    [win.id, acClear],
-  );
-
-  // First crack at every terminal keydown (before xterm forwards it to the PTY).
-  // Tab accepts the top suggestion; Esc dismisses the popup but still reaches the
-  // program. Arrows are left alone so shell history keeps working.
-  const onTermKey = useCallback(
-    (e: KeyboardEvent) => {
-      if (!acSuggRef.current.length) return true;
-      if (e.key === "Tab") {
-        e.preventDefault();
-        acceptAc();
-        return false;
-      }
-      if (e.key === "Escape") acClear();
-      return true;
-    },
-    [acceptAc, acClear],
-  );
 
   // ---- intelligent-border state machine driven by output activity ----
   // Flip to the blue "finished" ring, then auto-clear it back to idle (no ring)
@@ -474,11 +386,9 @@ export function TerminalPane({ win }: { win: WindowItem }) {
       if (d.includes("\r") || d.includes("\n")) lastEnterRef.current = lastInputRef.current;
       if (startedRef.current) {
         ptyWrite(win.id, encodeUtf8(d)).catch(() => {});
-        feedAc(d);
       }
       feedSniffer(d);
     },
-    onKeyEvent: onTermKey,
     onResize: ({ cols, rows }) => {
       sizeRef.current = { cols, rows };
       if (startedRef.current) ptyResize(win.id, rows, cols).catch(() => {});
@@ -633,26 +543,6 @@ export function TerminalPane({ win }: { win: WindowItem }) {
               <span className="cap">{paste.cap}</span>
             </>
           )}
-        </div>
-      )}
-
-      {acSugg.length > 0 && (
-        <div className="vato-ac-bar vato-no-drag" onMouseDown={(e) => e.stopPropagation()}>
-          {acSugg.map((s, i) => (
-            <button
-              key={s.text}
-              className={`vato-ac-chip${i === acActive ? " active" : ""}`}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                acceptAc(i);
-                term.focus();
-              }}
-            >
-              <b>{s.text.slice(0, acToken.length)}</b>
-              {s.text.slice(acToken.length)}
-            </button>
-          ))}
-          <span className="vato-ac-hint">⇥</span>
         </div>
       )}
 

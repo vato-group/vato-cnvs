@@ -37,8 +37,38 @@ export function onPtyExit(id: string, cb: () => void): Promise<UnlistenFn> {
   return listen(`pty://exit/${id}`, () => cb());
 }
 
-export async function ptyWrite(id: string, data: Uint8Array): Promise<void> {
-  await invoke("pty_write", { id, data: enc(data) });
+// Large inputs (a long paste) must not hit the PTY as one giant burst: Windows
+// ConPTY has a bounded input queue, and a single oversized write_all overflows
+// it — the child (Claude/Codex TUI) silently loses the middle of the text, so a
+// long paste lands only half-in. Split into modest chunks and pace them so
+// conhost and the child can drain between writes. Small typed input takes the
+// fast single-write path unchanged.
+const WRITE_CHUNK = 1024;
+const CHUNK_DELAY_MS = 3;
+const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+// Serialize writes per terminal id so the chunks of a long paste stay contiguous
+// instead of being interleaved by a keystroke's write resolving mid-paste.
+const writeChains = new Map<string, Promise<void>>();
+
+async function writeRaw(id: string, data: Uint8Array): Promise<void> {
+  if (data.length <= WRITE_CHUNK) {
+    await invoke("pty_write", { id, data: enc(data) });
+    return;
+  }
+  for (let off = 0; off < data.length; off += WRITE_CHUNK) {
+    await invoke("pty_write", { id, data: enc(data.subarray(off, off + WRITE_CHUNK)) });
+    if (off + WRITE_CHUNK < data.length) await delay(CHUNK_DELAY_MS);
+  }
+}
+
+export function ptyWrite(id: string, data: Uint8Array): Promise<void> {
+  const prev = writeChains.get(id) ?? Promise.resolve();
+  const next = prev.then(() => writeRaw(id, data));
+  // Keep the chain alive even if a write rejects, but surface the error to the
+  // caller's own `.catch`.
+  writeChains.set(id, next.catch(() => {}));
+  return next;
 }
 
 export async function ptyResize(id: string, rows: number, cols: number): Promise<void> {

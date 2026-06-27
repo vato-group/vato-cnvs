@@ -5,6 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { CanvasAddon } from "@xterm/addon-canvas";
 import "@xterm/xterm/css/xterm.css";
+import { copyText } from "../lib/clipboard";
 
 const THEME: ITheme = {
   background: "#0d1016",
@@ -46,12 +47,6 @@ export interface UseTerminalOpts {
    *   • "external" → double click → open in the real system browser
    */
   onOpenLink?: (uri: string, mode: "inApp" | "external") => void;
-  /**
-   * First crack at a keydown, before xterm sends anything to the PTY. Return
-   * false to swallow the key (we handled it — e.g. accepting an autocomplete
-   * suggestion on Tab); return true to let it through as normal.
-   */
-  onKeyEvent?: (e: KeyboardEvent) => boolean;
 }
 
 export function useTerminal(opts: UseTerminalOpts) {
@@ -125,10 +120,6 @@ export function useTerminal(opts: UseTerminalOpts) {
     // the \x16 WITHOUT preventDefault, so the native paste still fires: xterm
     // pastes text, and the pane's image handler catches pasted images as before.
     term.attachCustomKeyEventHandler((e) => {
-      // Let the pane intercept a keydown first (autocomplete accept/navigate).
-      if (e.type === "keydown" && cb.current.onKeyEvent?.(e) === false) {
-        return false;
-      }
       if (e.type === "keydown" && (e.ctrlKey || e.metaKey) && (e.key === "v" || e.key === "V")) {
         return false;
       }
@@ -139,7 +130,7 @@ export function useTerminal(opts: UseTerminalOpts) {
       if (e.type === "keydown" && (e.ctrlKey || e.metaKey) && (e.key === "c" || e.key === "C")) {
         const sel = term.getSelection();
         if (sel) {
-          navigator.clipboard?.writeText(sel).catch(() => {});
+          void copyText(sel);
           return false;
         }
         return true;
