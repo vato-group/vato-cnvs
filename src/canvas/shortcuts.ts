@@ -1,7 +1,9 @@
 import { useEffect } from "react";
 import { useStore } from "../store";
 import { bus } from "../lib/bus";
+import { revealWindow } from "../lib/reveal";
 import { gt } from "../i18n";
+import type { WindowItem } from "../types";
 import { setFocusMode, toggleFocusMode, selectTool, type ToolType } from "./canvasState";
 import type { CliId, FocusFilter } from "../types";
 
@@ -43,6 +45,8 @@ export const ACTION_DEFS: ActionDef[] = [
   { id: "workspace.prev", group: "spaces" },
   { id: "workspace.overview", group: "spaces" },
   { id: "control.open", group: "app" },
+  { id: "attention.next", group: "app" },
+  { id: "broadcast.open", group: "app" },
   { id: "settings.open", group: "app" },
   { id: "voice.mic", group: "voice" },
 ];
@@ -136,6 +140,22 @@ export function runAction(actionId: string) {
     case "workspace.new": return s.openNewWorkspace();
     case "workspace.overview": return s.toggleGrid();
     case "control.open": return s.toggleControlCenter();
+    case "broadcast.open": return s.toggleBroadcast();
+    // Jump to the next agent that wants you. Most urgent first (error → waiting →
+    // done), then cycle past whichever pane you're currently in. revealWindow
+    // switches workspace / focuses / warps the cursor and clears its flag.
+    case "attention.next": {
+      const wants = (w: WindowItem) =>
+        w.kind === "terminal" && (w.status === "waiting" || w.status === "error");
+      const list: WindowItem[] = [];
+      for (const w of s.workspaces) for (const win of w.windows) if (wants(win)) list.push(win);
+      if (!list.length) return;
+      // Crashed agents first, then those parked on a prompt.
+      list.sort((a, b) => (a.status === "error" ? 0 : 1) - (b.status === "error" ? 0 : 1));
+      const idx = list.findIndex((w) => w.id === s.lastActiveTerminalId);
+      const next = list[(idx + 1) % list.length];
+      return revealWindow(next.id);
+    }
     case "settings.open": return s.toggleSettings();
     // The mic lives in the VoiceBar component; signal it over the bus.
     case "voice.mic": return bus.emit("voice:toggle");
@@ -194,6 +214,9 @@ export function useShortcuts() {
       // enter navigation handle keys locally); only its toggle passes through so the
       // same shortcut closes it again.
       if (st.showControlCenter && actionId !== "control.open") return;
+      // Same for the broadcast bar: it owns the keyboard (its textarea + Esc/Enter);
+      // only its own toggle passes through so the shortcut closes it again.
+      if (st.showBroadcast && actionId !== "broadcast.open") return;
 
       // Don't steal keystrokes from text fields (settings/url bar/Excalidraw text).
       // `settings.open`/`control.open` are exempt so their toggle still works while a

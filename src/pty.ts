@@ -71,6 +71,11 @@ export function ptyWrite(id: string, data: Uint8Array): Promise<void> {
   return next;
 }
 
+/** Write the same bytes to several terminals at once (the broadcast bar). */
+export async function broadcastWrite(ids: string[], data: Uint8Array): Promise<void> {
+  await Promise.all(ids.map((id) => ptyWrite(id, data).catch(() => {})));
+}
+
 export async function ptyResize(id: string, rows: number, cols: number): Promise<void> {
   await invoke("pty_resize", { id, rows, cols });
 }

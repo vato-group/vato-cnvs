@@ -12,6 +12,7 @@ type Filter = "all" | "agents" | "terminals" | "running";
 const ST_LABEL: Record<string, string> = {
   starting: "cc.st.starting",
   active: "cc.st.active",
+  waiting: "cc.st.waiting",
   finished: "cc.st.finished",
   error: "cc.st.error",
 };

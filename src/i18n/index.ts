@@ -57,6 +57,13 @@ const fr: Dict = {
   "topbar.showInFocus": "Afficher en focus",
   "topbar.newAgentTerminal": "Nouvel agent / terminal",
   "topbar.agent": "Agent",
+  "topbar.attention": (v) =>
+    `${v.n} agent${(v.n as number) > 1 ? "s" : ""} en attente — aller au suivant`,
+
+  // OS notifications (agent went quiet / errored while the app was in background)
+  "notify.waiting": "attend ta réponse",
+  "notify.finished": "a terminé sa tâche",
+  "notify.error": "s'est arrêté (erreur)",
 
   // toolbar tools (tooltip names)
   "tool.selection": "Sélection",
@@ -232,6 +239,8 @@ const fr: Dict = {
   "action.workspace.prev": "Workspace précédent",
   "action.workspace.overview": "Vue d'ensemble des workspaces",
   "action.control.open": "Centre de contrôle",
+  "action.attention.next": "Aller à l'agent suivant qui te réclame",
+  "action.broadcast.open": "Diffuser une commande à plusieurs agents",
   "action.settings.open": "Ouvrir les réglages",
   "action.voice.mic": "Micro vocal — parler / activer l'écoute",
 
@@ -292,6 +301,7 @@ const fr: Dict = {
   // window frame
   "frame.fullscreen": "Plein écran",
   "frame.exitFullscreen": "Quitter le plein écran",
+  "frame.needsAttention": "Cet agent attend ton attention",
 
   // resume dialog
   "resume.title": "Reprendre la session précédente ?",
@@ -319,10 +329,20 @@ const fr: Dict = {
   "cc.open": "Centre de contrôle — tous les agents & terminaux",
   "cc.st.starting": "Démarrage…",
   "cc.st.active": "En cours",
+  "cc.st.waiting": "Attend ta réponse",
   "cc.st.finished": "En attente de révision",
   "cc.st.error": "Erreur",
   "cc.summary": (v) =>
     `${v.agents} agent${(v.agents as number) > 1 ? "s" : ""} · ${v.terms} terminal${(v.terms as number) > 1 ? "aux" : ""} · ${v.spaces} workspace${(v.spaces as number) > 1 ? "s" : ""}`,
+
+  // broadcast bar
+  "bcast.title": "Diffuser à plusieurs agents",
+  "bcast.count": (v) => `${v.n} cible${(v.n as number) > 1 ? "s" : ""}`,
+  "bcast.empty": "Aucun terminal dans ce workspace",
+  "bcast.none": "Aucun",
+  "bcast.placeholder": "Message à envoyer aux agents sélectionnés…",
+  "bcast.hint": "Entrée pour envoyer · Maj+Entrée nouvelle ligne · Échap fermer",
+  "bcast.send": (v) => `Envoyer à ${v.n}`,
 
   // zoom control
   "zoom.aria": "Zoom du canvas",
@@ -477,6 +497,13 @@ const en: Dict = {
   "topbar.showInFocus": "Show in focus",
   "topbar.newAgentTerminal": "New agent / terminal",
   "topbar.agent": "Agent",
+  "topbar.attention": (v) =>
+    `${v.n} agent${(v.n as number) > 1 ? "s" : ""} waiting — go to the next`,
+
+  // OS notifications (agent went quiet / errored while the app was in background)
+  "notify.waiting": "is waiting for your input",
+  "notify.finished": "finished its task",
+  "notify.error": "stopped (error)",
 
   "tool.selection": "Selection",
   "tool.hand": "Pan the canvas",
@@ -641,6 +668,8 @@ const en: Dict = {
   "action.workspace.prev": "Previous workspace",
   "action.workspace.overview": "Workspaces overview",
   "action.control.open": "Control center",
+  "action.attention.next": "Jump to the next agent that wants you",
+  "action.broadcast.open": "Broadcast a command to several agents",
   "action.settings.open": "Open settings",
   "action.voice.mic": "Voice mic — talk / toggle listening",
 
@@ -697,6 +726,7 @@ const en: Dict = {
 
   "frame.fullscreen": "Fullscreen",
   "frame.exitFullscreen": "Exit fullscreen",
+  "frame.needsAttention": "This agent wants your attention",
 
   "resume.title": "Resume the previous session?",
   "resume.desc": (v) =>
@@ -722,10 +752,20 @@ const en: Dict = {
   "cc.open": "Control center — every agent & terminal",
   "cc.st.starting": "Starting…",
   "cc.st.active": "Running",
+  "cc.st.waiting": "Awaiting your input",
   "cc.st.finished": "Awaiting review",
   "cc.st.error": "Error",
   "cc.summary": (v) =>
     `${v.agents} agent${(v.agents as number) > 1 ? "s" : ""} · ${v.terms} terminal${(v.terms as number) > 1 ? "s" : ""} · ${v.spaces} workspace${(v.spaces as number) > 1 ? "s" : ""}`,
+
+  // broadcast bar
+  "bcast.title": "Broadcast to several agents",
+  "bcast.count": (v) => `${v.n} target${(v.n as number) > 1 ? "s" : ""}`,
+  "bcast.empty": "No terminal in this workspace",
+  "bcast.none": "None",
+  "bcast.placeholder": "Message to send to the selected agents…",
+  "bcast.hint": "Enter to send · Shift+Enter newline · Esc close",
+  "bcast.send": (v) => `Send to ${v.n}`,
 
   "zoom.aria": "Canvas zoom",
   "zoom.fit": "Fit — bring everything on screen",
@@ -877,6 +917,13 @@ const nl: Dict = {
   "topbar.showInFocus": "Tonen in focus",
   "topbar.newAgentTerminal": "Nieuwe agent / terminal",
   "topbar.agent": "Agent",
+  "topbar.attention": (v) =>
+    `${v.n} agent${(v.n as number) > 1 ? "s" : ""} wachten — ga naar de volgende`,
+
+  // OS notifications (agent went quiet / errored while the app was in background)
+  "notify.waiting": "wacht op je input",
+  "notify.finished": "heeft de taak voltooid",
+  "notify.error": "is gestopt (fout)",
 
   "tool.selection": "Selectie",
   "tool.hand": "Canvas verplaatsen",
@@ -1041,6 +1088,8 @@ const nl: Dict = {
   "action.workspace.prev": "Vorige workspace",
   "action.workspace.overview": "Workspace-overzicht",
   "action.control.open": "Bedieningscentrum",
+  "action.attention.next": "Ga naar de volgende agent die je nodig heeft",
+  "action.broadcast.open": "Een commando naar meerdere agents sturen",
   "action.settings.open": "Instellingen openen",
   "action.voice.mic": "Vocale microfoon — spreken / luisteren aan/uit",
 
@@ -1097,6 +1146,7 @@ const nl: Dict = {
 
   "frame.fullscreen": "Volledig scherm",
   "frame.exitFullscreen": "Volledig scherm verlaten",
+  "frame.needsAttention": "Deze agent vraagt je aandacht",
 
   "resume.title": "Vorige sessie hervatten?",
   "resume.desc": (v) =>
@@ -1122,10 +1172,20 @@ const nl: Dict = {
   "cc.open": "Bedieningscentrum — alle agents & terminals",
   "cc.st.starting": "Starten…",
   "cc.st.active": "Bezig",
+  "cc.st.waiting": "Wacht op je input",
   "cc.st.finished": "Wacht op revisie",
   "cc.st.error": "Fout",
   "cc.summary": (v) =>
     `${v.agents} agent${(v.agents as number) > 1 ? "s" : ""} · ${v.terms} terminal${(v.terms as number) > 1 ? "s" : ""} · ${v.spaces} workspace${(v.spaces as number) > 1 ? "s" : ""}`,
+
+  // broadcast bar
+  "bcast.title": "Naar meerdere agents sturen",
+  "bcast.count": (v) => `${v.n} doel${(v.n as number) > 1 ? "en" : ""}`,
+  "bcast.empty": "Geen terminal in deze workspace",
+  "bcast.none": "Geen",
+  "bcast.placeholder": "Bericht voor de geselecteerde agents…",
+  "bcast.hint": "Enter om te sturen · Shift+Enter nieuwe regel · Esc sluiten",
+  "bcast.send": (v) => `Sturen naar ${v.n}`,
 
   "zoom.aria": "Canvaszoom",
   "zoom.fit": "Passend — alles in beeld brengen",

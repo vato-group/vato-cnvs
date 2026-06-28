@@ -21,7 +21,11 @@ import {
   saveTempImage,
 } from "../pty";
 import { bus } from "../lib/bus";
+import { notify } from "../lib/notify";
+import { looksWaiting } from "../lib/attention";
 import { attachPasteImage } from "../lib/clipboard";
+import type { AgentStatus } from "../types";
+import type { Terminal } from "@xterm/xterm";
 import { registerTermReader, serializeTerminal } from "../voice/termAccess";
 import { ChevronDownIcon } from "../ui/icons";
 import { gt, useT } from "../i18n";
@@ -65,6 +69,29 @@ export function TerminalPane({ win }: { win: WindowItem }) {
   // shell). Kept in a ref so the PTY output handler always sees the live value.
   const isAgentRef = useRef(def.agent);
   const prevAgentRef = useRef(def.agent);
+  // Live xterm handle, set on ready — lets the quiet-detection read the rendered
+  // screen to tell "waiting for input" apart from "just finished".
+  const screenTermRef = useRef<Terminal | null>(null);
+  // Current ring state (mirror of the store) so the output handler can tell a mere
+  // repaint of a parked prompt from the agent actually resuming work.
+  const statusRef = useRef<AgentStatus | undefined>(win.status);
+  // One OS notification per attention episode (reset when the agent resumes work),
+  // so a repaint/re-settle of the same prompt doesn't ping twice.
+  const notifiedRef = useRef(false);
+  // Snapshot of the screen text at the last settle. A later output burst that
+  // reproduces it byte-for-byte is a pure REPAINT (focus in/out, cursor blink),
+  // not the agent working — so it must NOT flash the orange "active" ring.
+  const settledScreenRef = useRef("");
+  // Timestamp until which output is treated as our own forced repaint. A workspace
+  // switch re-attaches and fires nudgeRedraw (a SIGWINCH) to paint the TUI into the
+  // fresh xterm; that repaint arrives as real PTY output but isn't new work.
+  const reattachQuietUntil = useRef(0);
+  // Keep statusRef in lockstep with the store so the settle / repaint-suppression
+  // logic always reads the live ring state — whoever set it (settle, attach on a
+  // workspace switch, a spawn, or the cross-workspace watcher).
+  useEffect(() => {
+    statusRef.current = win.status;
+  }, [win.status]);
 
   const [overlay, setOverlay] = useState<{ kind: "idle" | "stopped"; error?: string } | null>(null);
   // Plain shells: xterm owns the scrollback, so onScroll tells us precisely when
@@ -86,13 +113,40 @@ export function TerminalPane({ win }: { win: WindowItem }) {
   // ---- intelligent-border state machine driven by output activity ----
   // Flip to the blue "finished" ring, then auto-clear it back to idle (no ring)
   // after 15s so an agent that's been done a while stops drawing attention.
+  // Settle the border from a captured screen: a parked interactive prompt → the
+  // persistent violet "waiting" ring; anything else → the blue "finished" ring
+  // that fades back to neutral after 15s. Also routes attention when you're not
+  // already watching this pane.
+  const settle = useCallback(
+    (screen: string) => {
+      const waiting = looksWaiting(screen);
+      settledScreenRef.current = screen;
+      statusRef.current = waiting ? "waiting" : "finished";
+      setStatus(win.id, waiting ? "waiting" : "finished");
+      window.clearTimeout(finishedTimer.current);
+      // "Waiting on input" persists until you act on it; a plain "finished" fades
+      // back to a neutral border after 15s so a long-done agent stops nagging.
+      if (!waiting) finishedTimer.current = window.setTimeout(() => setStatus(win.id, "idle"), 15000);
+      // The badge / jump-to-next derive straight from this status (waiting/error),
+      // so there's nothing extra to flag. Just ping the OS once per episode when the
+      // app is in the background, so you can fire agents and walk away.
+      if (!notifiedRef.current && !document.hasFocus()) {
+        notifiedRef.current = true;
+        notify(`${win.title} — ${def.label}`, gt(waiting ? "notify.waiting" : "notify.finished"));
+      }
+    },
+    [setStatus, win.id, win.title, def.label],
+  );
+
   const markFinished = useCallback(() => {
-    setStatus(win.id, "finished");
-    window.clearTimeout(finishedTimer.current);
-    finishedTimer.current = window.setTimeout(() => setStatus(win.id, "idle"), 15000);
-  }, [setStatus, win.id]);
+    settle(screenTermRef.current ? serializeTerminal(screenTermRef.current, 28) : "");
+  }, [settle]);
 
   const markActive = useCallback(() => {
+    // New output = the agent is working again; arm a fresh notification episode so
+    // its NEXT settle (its next "your turn") pings again.
+    notifiedRef.current = false;
+    statusRef.current = "active";
     setStatus(win.id, "active");
     window.clearTimeout(idleTimer.current);
     window.clearTimeout(finishedTimer.current);
@@ -130,8 +184,31 @@ export function TerminalPane({ win }: { win: WindowItem }) {
     // Output right after an Enter IS a submitted prompt → allowed through.
     const now = Date.now();
     if (now - lastInputRef.current < 140 && now - lastEnterRef.current > 140) return;
+    // A workspace switch re-attaches and forces a SIGWINCH repaint (nudgeRedraw) to
+    // paint the TUI into the fresh xterm. That repaint is OUR doing, not the agent
+    // working — ignore it for a beat so a finished/idle pane doesn't flash
+    // orange→blue, and a waiting one doesn't blink, on every switch. A genuinely
+    // busy agent keeps emitting past this window and lights up then.
+    if (now < reattachQuietUntil.current) return;
+    // In a settled state (idle / finished / waiting), a fresh burst is often just a
+    // REPAINT of the same screen — the TUI redrawing on focus in/out or cursor
+    // blink — not the agent working. Re-settle from the current screen (keeps the
+    // waiting violet / finished / idle ring) instead of flashing the orange "active"
+    // pulse. The agent truly resuming CHANGES the screen (new output, a spinner /
+    // "esc to interrupt"), so it no longer matches and falls through to markActive.
+    if (statusRef.current === "waiting" || statusRef.current === "finished" || statusRef.current === "idle") {
+      const screen = screenTermRef.current ? serializeTerminal(screenTermRef.current, 28) : "";
+      // Unchanged screen → pure repaint: leave the ring exactly as it settled.
+      if (screen && screen === settledScreenRef.current) return;
+      // Changed but still parked on a prompt → keep/refresh the waiting ring.
+      if (looksWaiting(screen)) {
+        window.clearTimeout(idleTimer.current);
+        settle(screen);
+        return;
+      }
+    }
     markActive();
-  }, [markActive, setStatus, win.id]);
+  }, [markActive, settle, setStatus, win.id]);
 
   // Keep the agent flag in sync with the *current* identity (spawn CLI, or one
   // detected running inside the shell). When a plain shell turns into an agent,
@@ -200,7 +277,15 @@ export function TerminalPane({ win }: { win: WindowItem }) {
     });
     const offExit = await onPtyExit(win.id, () => {
       dlog("EXIT event");
-      setStatus(win.id, "error");
+      statusRef.current = "error";
+      setStatus(win.id, "error"); // counts toward the attention badge / jump-to-next
+      // A process dying is worth surfacing — ping the OS once if the app is in the
+      // background. (An agent's own clean exit re-spawns a shell below, but you
+      // still want to know it stopped.)
+      if (!notifiedRef.current && !document.hasFocus()) {
+        notifiedRef.current = true;
+        notify(`${win.title} — ${def.label}`, gt("notify.error"));
+      }
       startedRef.current = false;
       lineBuf.current = "";
       cancelCaptureRef.current?.();
@@ -216,7 +301,7 @@ export function TerminalPane({ win }: { win: WindowItem }) {
       }
     });
     unlistenRef.current.push(offOut, offExit);
-  }, [onActivity, setStatus, updateWindow, def.agent, win.id]);
+  }, [onActivity, setStatus, updateWindow, def.agent, def.label, win.id, win.title]);
 
   // A full-screen TUI (Claude/Codex) only paints on a draw event. When a pane is
   // spawned while occluded (behind the resume dialog) or re-attached to a still-
@@ -339,7 +424,18 @@ export function TerminalPane({ win }: { win: WindowItem }) {
     // agent is mid-task the next output burst flips it back to active; if it's
     // idle (the common case) it stays at 0 colour instead of a false "finished".
     settledRef.current = true;
-    setStatus(win.id, "idle");
+    // The backlog replay + nudgeRedraw below force the TUI to repaint into the fresh
+    // xterm. That burst of "output" is ours, not the agent's — silence the smart
+    // border long enough to cover both nudge pings (250ms + 1000ms) and their
+    // repaint latency, so a settled pane doesn't flash active on every switch.
+    reattachQuietUntil.current = Date.now() + 1500;
+    // Don't clobber a settled attention state the watcher (or a previous visit)
+    // left on this pane — wiping a "waiting"/"error" to idle would blink the badge
+    // off on every workspace switch. Only a stale "working" ring needs neutralising.
+    if (statusRef.current !== "waiting" && statusRef.current !== "error") {
+      statusRef.current = "idle";
+      setStatus(win.id, "idle");
+    }
     // Repaint the fresh xterm from the PTY's backlog. A full-screen TUI redraws
     // itself on the SIGWINCH below, but a plain shell never does — without the
     // replay it would stay black until the next keystroke ("noir au switch de
@@ -396,6 +492,7 @@ export function TerminalPane({ win }: { win: WindowItem }) {
     onScrollChange: setAtBottom,
     onReady: (t) => {
       writeRef.current = (d) => t.write(d);
+      screenTermRef.current = t;
       sizeRef.current = { cols: t.cols, rows: t.rows };
       readyRef.current = true;
       dlog(`onReady ${t.cols}x${t.rows}`);

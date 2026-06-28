@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { useStore } from "../store";
+import { countAttention, useStore } from "../store";
 import { CLIS, CLI_ORDER } from "../data/clis";
 import { cliCheck } from "../pty";
-import { humanizeCombo } from "../canvas/shortcuts";
+import { humanizeCombo, runAction } from "../canvas/shortcuts";
 import { useT } from "../i18n";
 import { Dropdown } from "./Dropdown";
-import { ChevronDownIcon, FocusIcon, FolderIcon, GridIcon, MonitorIcon, PlusIcon, SettingsIcon } from "./icons";
+import { BellIcon, ChevronDownIcon, FocusIcon, FolderIcon, GridIcon, MonitorIcon, PlusIcon, SettingsIcon } from "./icons";
 
 /** Shortcut action id for spawning a given CLI from the menu, if any. */
 const cliShortcut = (id: string): string | undefined =>
@@ -25,6 +25,7 @@ export function TopBar() {
   const focusMode = useStore((s) => s.focusMode);
   const setFocusFilter = useStore((s) => s.setFocusFilter);
   const shortcuts = useStore((s) => s.settings.shortcuts);
+  const attention = useStore(countAttention);
   const focusFilter = active?.focusFilter ?? "all";
   const focusLabel =
     focusFilter === "agents" ? t("common.agents") : focusFilter === "terminals" ? t("common.terminals") : t("common.all");
@@ -124,6 +125,17 @@ export function TopBar() {
       >
         <MonitorIcon size={16} />
       </button>
+
+      {attention > 0 && (
+        <button
+          className="vato-attn-btn"
+          onClick={() => runAction("attention.next")}
+          title={tip(t("topbar.attention", { n: attention }), "attention.next")}
+        >
+          <BellIcon size={15} />
+          <span className="vato-attn-count">{attention}</span>
+        </button>
+      )}
 
       <button
         className="vato-icon-btn"

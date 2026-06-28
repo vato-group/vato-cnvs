@@ -1,7 +1,13 @@
 export type PaneKind = "terminal" | "browser" | "notes";
 
-/** Drives the "intelligent border" colour. */
-export type AgentStatus = "idle" | "starting" | "active" | "finished" | "error";
+/**
+ * Drives the "intelligent border" colour.
+ *   • waiting → the agent went quiet on an interactive prompt (y/n, a question,
+ *     its idle input box) — it's YOUR turn. Distinct from `finished` (done, no
+ *     prompt detected) so the most urgent "answer me" case stands out and never
+ *     auto-fades.
+ */
+export type AgentStatus = "idle" | "starting" | "active" | "waiting" | "finished" | "error";
 
 export type CliId = "claude" | "codex" | "cursor" | "opencode" | "antigravity" | "shell";
 
@@ -19,6 +25,10 @@ export interface WindowItem {
   cli?: CliId; // CLI this pane was spawned with (drives what `Démarrer` launches)
   runningCli?: CliId; // agent detected running *inside* the pane (display override; live, not persisted)
   cwd?: string;
+  // The intelligent-border / attention state. The SINGLE source of truth for the
+  // bell badge + jump-to-next: an agent counts as "wants you" while its status is
+  // `waiting` (parked on a prompt — your turn) or `error`. `waiting` never fades;
+  // it clears only when the agent resumes working (i.e. once you've answered).
   status?: AgentStatus;
   started?: boolean; // a PTY has been spawned this session
   autostart?: boolean; // spawn immediately on mount (fresh windows only; cleared on persist)

@@ -147,6 +147,10 @@ body {
   background: #3b82f6;
   box-shadow: 0 0 8px #3b82f6;
 }
+.s-waiting {
+  background: #a855f7;
+  box-shadow: 0 0 8px #a855f7;
+}
 .s-error {
   background: #ef4444;
   box-shadow: 0 0 8px #ef4444;
@@ -178,10 +182,53 @@ body {
       0 18px 50px rgba(0, 0, 0, 0.5);
   }
 }
+/* "Waiting on your input" — violet, persistent pulse (never auto-fades). */
+.vato-ring-waiting {
+  border-color: rgba(168, 85, 247, 0.6);
+  animation: vato-pulse-wait 1.8s ease-in-out infinite;
+}
+@keyframes vato-pulse-wait {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1.5px rgba(168, 85, 247, 0.85), 0 0 20px 1px rgba(168, 85, 247, 0.22),
+      0 18px 50px rgba(0, 0, 0, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 1.6px rgba(168, 85, 247, 1), 0 0 34px 5px rgba(168, 85, 247, 0.45),
+      0 18px 50px rgba(0, 0, 0, 0.5);
+  }
+}
+/* Titlebar attention pip — persists after a "finished" ring fades, so a pane that
+   wants you keeps a quiet marker until you open it. */
+.vato-tb-attn {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: #a855f7;
+  box-shadow: 0 0 8px #a855f7;
+  animation: vato-pulse-pip 1.4s ease-in-out infinite;
+}
+@keyframes vato-pulse-pip {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .vato-ring-active {
     animation: none;
     box-shadow: 0 0 0 1.5px rgba(245, 158, 11, 0.85), 0 18px 50px rgba(0, 0, 0, 0.5);
+  }
+  .vato-ring-waiting {
+    animation: none;
+    box-shadow: 0 0 0 1.5px rgba(168, 85, 247, 0.9), 0 18px 50px rgba(0, 0, 0, 0.5);
+  }
+  .vato-tb-attn {
+    animation: none;
   }
 }
 
@@ -388,6 +435,34 @@ body {
 .vato-icon-btn:hover {
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
+}
+/* Attention bell — shown only when ≥1 agent wants you; click = jump to the next. */
+.vato-attn-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 34px;
+  padding: 0 10px;
+  background: rgba(168, 85, 247, 0.16);
+  color: #d8b4fe;
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+  animation: vato-pulse-pip 1.6s ease-in-out infinite;
+}
+.vato-attn-btn:hover {
+  background: rgba(168, 85, 247, 0.28);
+  color: #fff;
+}
+.vato-attn-count {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vato-attn-btn {
+    animation: none;
+  }
 }
 .vato-agent-btn {
   display: flex;
@@ -2961,6 +3036,143 @@ select.vato-input option {
   justify-content: center;
   padding-top: 12vh;
 }
+
+/* ---- broadcast bar (type one command, send to several agents) ---- */
+.vato-bcast-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(8, 10, 14, 0.62);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 16vh;
+}
+.vato-bcast {
+  width: min(620px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background: rgba(20, 24, 33, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.6);
+}
+.vato-bcast-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.vato-bcast-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+}
+.vato-bcast-sub {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+}
+.vato-bcast-head .vato-tb-btn {
+  margin-left: auto;
+}
+.vato-bcast-empty {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 6px 2px;
+}
+.vato-bcast-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  max-height: 168px;
+  overflow-y: auto;
+}
+.vato-bcast-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px 5px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  cursor: pointer;
+}
+.vato-bcast-chip .ic {
+  display: flex;
+  opacity: 0.5;
+}
+.vato-bcast-chip.on {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: #fff;
+}
+.vato-bcast-chip.on .ic {
+  opacity: 1;
+}
+.vato-bcast-quick {
+  display: flex;
+  gap: 8px;
+}
+.vato-bcast-quick button {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.05);
+  border: none;
+  border-radius: 7px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.vato-bcast-quick button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.vato-bcast-input {
+  width: 100%;
+  resize: none;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 10px 12px;
+  outline: none;
+}
+.vato-bcast-input:focus {
+  border-color: rgba(168, 85, 247, 0.55);
+}
+.vato-bcast-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.vato-bcast-foot .hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.38);
+}
+.vato-bcast-send {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(180deg, #b06cf0, #8b3ed8);
+  border: none;
+  border-radius: 9px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.vato-bcast-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 .vato-cc {
   width: min(640px, 92vw);
   max-height: 70vh;
@@ -3100,6 +3312,10 @@ select.vato-input option {
 .vato-cc-st.s-starting {
   color: #f6b545;
   background: rgba(245, 158, 11, 0.16);
+}
+.vato-cc-st.s-waiting {
+  color: #d8b4fe;
+  background: rgba(168, 85, 247, 0.16);
 }
 .vato-cc-st.s-finished {
   color: #9bb8ff;

@@ -8,6 +8,7 @@ import { ZoomControl } from "./ui/ZoomControl";
 import { VoiceBar } from "./ui/VoiceBar";
 import { GridOverview } from "./ui/GridOverview";
 import { ControlCenter } from "./ui/ControlCenter";
+import { BroadcastBar } from "./ui/BroadcastBar";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import { ResumeDialog } from "./ui/ResumeDialog";
 import { NewWorkspaceDialog } from "./ui/NewWorkspaceDialog";
@@ -15,6 +16,7 @@ import { Onboarding } from "./ui/Onboarding";
 import { MinimizeIcon } from "./ui/icons";
 import { useStore, countResumableAgents, focusGridWindows, useActiveWorkspace } from "./store";
 import { useShortcuts } from "./canvas/shortcuts";
+import { useAttentionWatch } from "./hooks/useAttentionWatch";
 import { setFocusMode } from "./canvas/canvasState";
 import { useT } from "./i18n";
 
@@ -26,6 +28,7 @@ export default function App() {
   const activeId = useStore((s) => s.activeId);
   const showGrid = useStore((s) => s.showGrid);
   const showControlCenter = useStore((s) => s.showControlCenter);
+  const showBroadcast = useStore((s) => s.showBroadcast);
   const showSettings = useStore((s) => s.showSettings);
   const newWorkspaceOpen = useStore((s) => s.newWorkspaceOpen);
   const setFullscreen = useStore((s) => s.setFullscreen);
@@ -48,6 +51,8 @@ export default function App() {
   const hasVoiceKey = useStore((s) => !!s.settings.stt.openaiKey.trim());
 
   useShortcuts();
+  // Watch agents in non-active workspaces so they still raise the badge / notify.
+  useAttentionWatch();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -201,6 +206,7 @@ export default function App() {
 
       {showGrid && <GridOverview />}
       {showControlCenter && <ControlCenter />}
+      {showBroadcast && <BroadcastBar />}
       {showSettings && <SettingsPanel />}
       {newWorkspaceOpen && <NewWorkspaceDialog />}
       {showResume && <ResumeDialog />}

@@ -53,6 +53,10 @@ const BASE_SHORTCUTS: Record<string, string> = {
   "workspace.overview": "ctrl+shift+g",
   // Compact control center (all agents/terminals across every workspace).
   "control.open": "ctrl+k",
+  // Jump to the next agent that needs you (waiting for input / finished / error).
+  "attention.next": "ctrl+j",
+  // Open the broadcast bar (type one command, send it to several agents).
+  "broadcast.open": "ctrl+enter",
   "window.close": "ctrl+w",
   "window.fullscreen": "f11",
   "settings.open": "ctrl+,",
@@ -185,6 +189,8 @@ export interface AppState {
    * to jump straight to one (switch space, focus it, drop the cursor on it).
    */
   showControlCenter: boolean;
+  /** The broadcast bar (type one command, send it to several agents) is open. */
+  showBroadcast: boolean;
   showSettings: boolean;
   settingsSection: string;
   lastActiveTerminalId: string | null;
@@ -212,6 +218,8 @@ export interface AppState {
 
   // control center
   toggleControlCenter: (v?: boolean) => void;
+  // broadcast bar
+  toggleBroadcast: (v?: boolean) => void;
 
   // settings
   toggleSettings: (v?: boolean) => void;
@@ -249,6 +257,8 @@ export interface AppState {
   reorderWindows: (idsInOrder: string[]) => void;
   bringToFront: (id: string) => void;
   setStatus: (id: string, status: AgentStatus) => void;
+  /** Set a window's status in ANY workspace (the cross-workspace attention watcher). */
+  setAnyStatus: (id: string, status: AgentStatus) => void;
   setFullscreen: (id: string | null) => void;
   setLastActiveTerminal: (id: string) => void;
   toggleGrid: (v?: boolean) => void;
@@ -262,6 +272,22 @@ export interface AppState {
   restartAgentsFresh: () => void;
   dismissResume: () => void;
 }
+
+/**
+ * Count terminal panes (any workspace) that want the user: parked on a prompt
+ * (`waiting`) or crashed (`error`). Status is the single source of truth, so this
+ * never diverges from what the windows / control center show. `finished` is a
+ * transient "done" (blue ring, fades) and deliberately not counted.
+ */
+export const countAttention = (s: AppState): number =>
+  s.workspaces.reduce(
+    (n, w) =>
+      n +
+      w.windows.filter(
+        (win) => win.kind === "terminal" && (win.status === "waiting" || win.status === "error"),
+      ).length,
+    0,
+  );
 
 /** Count agent panes (any workspace) that carry a resumable conversation. */
 export const countResumableAgents = (s: AppState): number =>
@@ -307,6 +333,7 @@ export const useStore = create<AppState>()(
       newWorkspaceOpen: false,
       showGrid: false,
       showControlCenter: false,
+      showBroadcast: false,
       showSettings: false,
       settingsSection: "agents",
       lastActiveTerminalId: null,
@@ -322,6 +349,8 @@ export const useStore = create<AppState>()(
       setOnboardingPractice: (v) => set({ onboardingPractice: v }),
 
       toggleControlCenter: (v) => set((s) => ({ showControlCenter: v ?? !s.showControlCenter })),
+
+      toggleBroadcast: (v) => set((s) => ({ showBroadcast: v ?? !s.showBroadcast })),
 
       toggleSettings: (v) => set((s) => ({ showSettings: v ?? !s.showSettings })),
 
@@ -549,6 +578,16 @@ export const useStore = create<AppState>()(
 
       setStatus: (id, status) =>
         set((s) => mapActive(s, (w) => mapWindow(w, id, (win) => ({ ...win, status })))),
+
+      // Status drives the attention badge (waiting/error), so the cross-workspace
+      // watcher must be able to set it wherever the id lives, not just the active space.
+      setAnyStatus: (id, status) =>
+        set((s) => ({
+          workspaces: s.workspaces.map((w) => ({
+            ...w,
+            windows: w.windows.map((win) => (win.id === id && win.status !== status ? { ...win, status } : win)),
+          })),
+        })),
 
       setFullscreen: (id) => set({ fullscreenId: id }),
 

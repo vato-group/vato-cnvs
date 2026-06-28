@@ -169,19 +169,40 @@ export function useTerminal(opts: UseTerminalOpts) {
       cb.current.onScrollChange?.(b.viewportY >= b.baseY);
     });
 
-    const ro = new ResizeObserver(() => {
-      try {
-        fit.fit();
-      } catch {
-        /* 0-size during drag/hidden */
-      }
-    });
+    // Coalesce fits into a single rAF. In focus mode every tile resizes at once
+    // (free→focus, or adding/removing an agent reflows the whole grid), firing a
+    // burst of ResizeObserver notifications. A synchronous fit() per notification
+    // races the in-flight reflow: it can read a stale/intermediate box, compute
+    // too many cols/rows, and — since .vato-body is overflow:hidden — clip the
+    // text with no later fit to correct it ("texte coupé en focus"). Deferring to
+    // rAF runs ONE fit after layout settles, on the final tile size. A second fit
+    // next frame catches the case where the first ran a hair early.
+    let refitRaf = 0;
+    const refit = () => {
+      cancelAnimationFrame(refitRaf);
+      refitRaf = requestAnimationFrame(() => {
+        try {
+          fit.fit();
+        } catch {
+          /* 0-size during drag/hidden */
+        }
+        refitRaf = requestAnimationFrame(() => {
+          try {
+            fit.fit();
+          } catch {
+            /* noop */
+          }
+        });
+      });
+    };
+    const ro = new ResizeObserver(refit);
     ro.observe(el);
 
     cb.current.onReady?.(term);
 
     return () => {
       window.clearTimeout(linkTimer);
+      cancelAnimationFrame(refitRaf);
       ro.disconnect();
       dataSub.dispose();
       resizeSub.dispose();

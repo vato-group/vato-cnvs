@@ -19,6 +19,8 @@ function ringClass(status?: AgentStatus): string {
     case "active":
     case "starting":
       return "vato-ring-active";
+    case "waiting":
+      return "vato-ring-waiting";
     case "finished":
       return "vato-ring-finished";
     case "error":
