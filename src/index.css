@@ -593,6 +593,34 @@ body {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.35);
 }
+/* A workspace hidden from the next/prev cycle: dimmed name, but still listed. */
+.vato-menu-item.dim .label,
+.vato-menu-item.dim > svg {
+  opacity: 0.45;
+}
+/* Per-row eye toggle (hide/show in cycle). Reveals on row hover. */
+.vato-menu-eye {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.vato-menu-item:hover .vato-menu-eye,
+.vato-menu-item.dim .vato-menu-eye {
+  opacity: 1;
+}
+.vato-menu-eye:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
 .vato-menu-sep {
   height: 1px;
   background: rgba(255, 255, 255, 0.08);
@@ -1609,10 +1637,29 @@ select.vato-input option {
   background: rgba(239, 154, 99, 0.22);
   border: 1px solid rgba(239, 154, 99, 0.5);
 }
-.vato-grid-card-del {
+/* Hidden-from-cycle badge + dimmed card. */
+.vato-grid-card-tag.hidden {
+  color: rgba(255, 255, 255, 0.82);
+  background: rgba(120, 130, 145, 0.28);
+  border-color: rgba(160, 170, 185, 0.5);
+}
+/* Stack a second badge below the first when both are present. */
+.vato-grid-card-tag + .vato-grid-card-tag {
+  top: 38px;
+}
+.vato-grid-card.hidden .vato-grid-card-preview,
+.vato-grid-card.hidden .vato-grid-card-body {
+  opacity: 0.5;
+}
+/* Per-card action buttons (hide, delete), stacked top-right. */
+.vato-grid-card-actions {
   position: absolute;
   top: 8px;
   right: 8px;
+  display: flex;
+  gap: 6px;
+}
+.vato-grid-card-del {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1629,9 +1676,19 @@ select.vato-input option {
 .vato-grid-card:hover .vato-grid-card-del {
   opacity: 1;
 }
+/* Keep the eye visible on hidden cards so they can be un-hidden at a glance. */
+.vato-grid-card-del.hide.on {
+  opacity: 1;
+}
+/* Delete (trash) gets the destructive red on hover; the eye stays neutral. */
 .vato-grid-card-del:hover {
   background: rgba(220, 70, 70, 0.85);
   border-color: rgba(220, 70, 70, 0.9);
+  color: #fff;
+}
+.vato-grid-card-del.hide:hover {
+  background: rgba(96, 110, 130, 0.85);
+  border-color: rgba(120, 135, 155, 0.9);
   color: #fff;
 }
 

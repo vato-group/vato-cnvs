@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Canvas } from "./canvas/Canvas";
 import { TitleBar } from "./ui/TitleBar";
 import { TopBar } from "./ui/TopBar";
@@ -20,8 +21,11 @@ import { useAttentionWatch } from "./hooks/useAttentionWatch";
 import { setFocusMode } from "./canvas/canvasState";
 import { useT } from "./i18n";
 
+const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
 export default function App() {
   const t = useT();
+  const rootRef = useRef<HTMLDivElement>(null);
   const fullscreenId = useStore((s) => s.fullscreenId);
   const focusMode = useStore((s) => s.focusMode);
   const activeWs = useActiveWorkspace();
@@ -53,6 +57,46 @@ export default function App() {
   useShortcuts();
   // Watch agents in non-active workspaces so they still raise the badge / notify.
   useAttentionWatch();
+
+  useEffect(() => {
+    const shouldRestoreAppFocus = () => {
+      const active = document.activeElement;
+      return !active || active === document.body || active === document.documentElement || active.tagName === "IFRAME";
+    };
+
+    const restoreAppFocus = () => {
+      requestAnimationFrame(() => {
+        if (shouldRestoreAppFocus()) rootRef.current?.focus({ preventScroll: true });
+      });
+    };
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    const attachDomFallback = () => {
+      window.addEventListener("focus", restoreAppFocus);
+      unlisten = () => window.removeEventListener("focus", restoreAppFocus);
+    };
+
+    if (isTauri) {
+      getCurrentWindow()
+        .onFocusChanged(({ payload: focused }) => {
+          if (focused) restoreAppFocus();
+        })
+        .then((off) => {
+          if (disposed) off();
+          else unlisten = off;
+        })
+        .catch(attachDomFallback);
+    } else {
+      attachDomFallback();
+    }
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -88,7 +132,7 @@ export default function App() {
   // with the wizard layered on top (so the final "practice" step is interactive).
   if (!onboardingDone && noWorkspace) {
     return (
-      <div className="vato-root">
+      <div ref={rootRef} className="vato-root" tabIndex={-1}>
         <TitleBar />
         <Onboarding />
       </div>
@@ -100,7 +144,7 @@ export default function App() {
   // canvas/top-bar would dereference an undefined active workspace otherwise.
   if (noWorkspace) {
     return (
-      <div className="vato-root">
+      <div ref={rootRef} className="vato-root" tabIndex={-1}>
         <TitleBar />
         <NewWorkspaceDialog forced />
       </div>
@@ -108,7 +152,11 @@ export default function App() {
   }
 
   return (
-    <div className={`vato-root ${zen ? "vato-focus" : ""} ${peek ? "vato-peek" : ""}`}>
+    <div
+      ref={rootRef}
+      className={`vato-root ${zen ? "vato-focus" : ""} ${peek ? "vato-peek" : ""}`}
+      tabIndex={-1}
+    >
       <Canvas />
 
       <TitleBar />

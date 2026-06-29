@@ -262,7 +262,7 @@ function WindowFrameImpl({ win, rect, zoom, focusMode, fullscreen, hidden, isDra
         </div>
 
         <div className="vato-body allow-select">
-          {win.kind === "terminal" && <TerminalPane win={win} />}
+          {win.kind === "terminal" && <TerminalPane win={win} visible={!hidden} />}
           {win.kind === "browser" && <BrowserPane win={win} />}
           {win.kind === "notes" && <NotesPane win={win} />}
         </div>

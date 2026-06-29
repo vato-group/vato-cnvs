@@ -17,6 +17,19 @@ import { randomName } from "./data/names";
 import { computeTiles, spawnRectNear } from "./canvas/tiling";
 import { deleteSceneFiles } from "./canvas/sceneFiles";
 import { IS_MAC } from "./lib/platform";
+import { perfEvent } from "./lib/perf";
+
+/**
+ * Auto-focus a freshly spawned window: bring it to front + drop the keyboard
+ * into it (terminal) so the user can type immediately. Reuses the "jump to
+ * agent" primitive but skips the OS-cursor warp — the mouse is on a toolbar
+ * button, not following the keyboard. Dynamic-imported to dodge a static
+ * store↔reveal import cycle; reveal already defers to the next frame, so the
+ * window is mounted by the time it runs.
+ */
+function focusNewWindow(id: string) {
+  void import("./lib/reveal").then((m) => m.revealWindow(id, { cursor: false }));
+}
 
 /**
  * Base keyboard shortcuts (actionId -> combo, see canvas/shortcuts.ts).
@@ -139,6 +152,25 @@ export function baseName(p?: string): string | undefined {
 
 const maxZ = (w: Workspace) => w.windows.reduce((m, win) => Math.max(m, win.z), 0);
 
+/**
+ * The id of the workspace `dir` steps (+1 next / -1 prev) from `activeId`,
+ * skipping `hidden` ones. Walks the ring up to `n` times so it lands on the
+ * nearest visible space; returns `null` when no *other* visible space exists
+ * (single space, or every other space hidden). Shared by the next/prev shortcut
+ * and the relative voice command so the two never diverge.
+ */
+export function stepWorkspace(workspaces: Workspace[], activeId: string, dir: 1 | -1): string | null {
+  const n = workspaces.length;
+  if (!n) return null;
+  let idx = workspaces.findIndex((w) => w.id === activeId);
+  if (idx < 0) idx = 0;
+  for (let step = 1; step <= n; step++) {
+    const cand = workspaces[((idx + dir * step) % n + n) % n];
+    if (!cand.hidden && cand.id !== activeId) return cand.id;
+  }
+  return null;
+}
+
 /** Re-tile every window in a workspace into the grid (order-driven mosaic). */
 function retile(w: Workspace): Workspace {
   if (!w.windows.length) return w;
@@ -237,6 +269,8 @@ export interface AppState {
   openNewWorkspace: () => void;
   closeNewWorkspace: () => void;
   setActive: (id: string) => void;
+  /** Toggle a workspace's `hidden` flag (excluded from next/prev cycling). */
+  toggleWorkspaceHidden: (id: string, v?: boolean) => void;
   renameWorkspace: (id: string, name: string) => void;
   setBackground: (id: string, bg: Background) => void;
   setWorkspaceCwd: (id: string, cwd: string) => void;
@@ -436,6 +470,13 @@ export const useStore = create<AppState>()(
       setActive: (id) =>
         set((s) => ({ activeId: id, showGrid: false, focusMode: s.focusByWorkspace[id] ?? false })),
 
+      toggleWorkspaceHidden: (id, v) =>
+        set((s) => ({
+          workspaces: s.workspaces.map((w) =>
+            w.id === id ? { ...w, hidden: v ?? !w.hidden } : w,
+          ),
+        })),
+
       renameWorkspace: (id, name) =>
         set((s) => ({ workspaces: s.workspaces.map((w) => (w.id === id ? { ...w, name } : w)) })),
 
@@ -453,6 +494,7 @@ export const useStore = create<AppState>()(
 
       addTerminal: (cli, opts) => {
         const id = crypto.randomUUID();
+        perfEvent("add_terminal", { id: id.slice(0, 8), cli });
         set((s) =>
           mapActive(s, (w) => {
             const used = new Set(w.windows.filter((x) => x.kind === "terminal").map((x) => x.title));
@@ -481,6 +523,7 @@ export const useStore = create<AppState>()(
             return { ...w, windows: [...w.windows, win] };
           }),
         );
+        focusNewWindow(id);
         return id;
       },
 
@@ -508,6 +551,7 @@ export const useStore = create<AppState>()(
             return { ...w, windows: [...w.windows, win] };
           }),
         );
+        focusNewWindow(id);
         return id;
       },
 
@@ -577,7 +621,12 @@ export const useStore = create<AppState>()(
         ),
 
       setStatus: (id, status) =>
-        set((s) => mapActive(s, (w) => mapWindow(w, id, (win) => ({ ...win, status })))),
+        set((s) => {
+          const active = s.workspaces.find((w) => w.id === s.activeId);
+          const cur = active?.windows.find((win) => win.id === id);
+          if (!cur || cur.status === status) return s;
+          return mapActive(s, (w) => mapWindow(w, id, (win) => ({ ...win, status })));
+        }),
 
       // Status drives the attention badge (waiting/error), so the cross-workspace
       // watcher must be able to set it wherever the id lives, not just the active space.

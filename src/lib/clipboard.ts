@@ -1,5 +1,29 @@
 import { writeText as tauriWriteText } from "@tauri-apps/plugin-clipboard-manager";
 
+const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+function copyWithTextarea(text: string): boolean {
+  if (typeof document === "undefined") return false;
+  const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+    active?.focus({ preventScroll: true });
+  }
+}
+
 /**
  * Copy plain text to the OS clipboard. Prefers Tauri's native clipboard, which
  * works in WebView2 regardless of document focus; `navigator.clipboard.writeText`
@@ -8,17 +32,24 @@ import { writeText as tauriWriteText } from "@tauri-apps/plugin-clipboard-manage
  * nothing. Falls back to the web API outside Tauri.
  */
 export async function copyText(text: string): Promise<void> {
-  try {
-    await tauriWriteText(text);
-    return;
-  } catch {
-    /* not in Tauri / plugin error → try the web API */
+  if (!text) return;
+  if (isTauri) {
+    try {
+      await tauriWriteText(text);
+      return;
+    } catch {
+      /* plugin error: try the web API */
+    }
   }
   try {
-    await navigator.clipboard?.writeText(text);
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
   } catch {
     /* clipboard unavailable */
   }
+  copyWithTextarea(text);
 }
 
 export function blobToDataUrl(blob: Blob): Promise<string> {

@@ -6,7 +6,7 @@
 // execute each tool against the Zustand store / PTY and feed the result back
 // until the model emits a final confirmation. Everything goes through the Rust
 // `openai_chat` proxy so the key never touches the JS bundle and there's no CORS.
-import { useStore } from "../store";
+import { useStore, stepWorkspace } from "../store";
 import { CLIS, CLI_ORDER } from "../data/clis";
 import type { CliId, WindowItem } from "../types";
 import { ptyBacklog, ptyIsAlive, ptyKill } from "../pty";
@@ -565,7 +565,6 @@ async function execTool(name: string, argsJson: string, steps: string[]): Promis
       const list = s.workspaces;
       if (!list.length) return JSON.stringify({ error: "aucun workspace" });
       const n = list.length;
-      const idx = list.findIndex((w) => w.id === s.activeId);
       const target = String(args.target ?? "next").trim().toLowerCase();
 
       // Relative move — same logic as the workspace.next/prev shortcut. Accept
@@ -582,9 +581,17 @@ async function execTool(name: string, argsJson: string, steps: string[]): Promis
         });
       }
       let next: typeof list[number] | undefined;
-      if (NEXT.includes(target)) next = list[(idx + 1 + n) % n];
-      else if (PREV.includes(target)) next = list[(idx - 1 + n) % n];
-      else {
+      if (NEXT.includes(target) || PREV.includes(target)) {
+        // Relative move skips hidden spaces, exactly like the next/prev shortcut.
+        const id = stepWorkspace(list, s.activeId, NEXT.includes(target) ? 1 : -1);
+        if (!id) {
+          return JSON.stringify({
+            noop: true,
+            message: "Aucun autre workspace visible vers lequel basculer (les autres sont masqués).",
+          });
+        }
+        next = list.find((w) => w.id === id);
+      } else {
         // Pure number → 1-based workspace index.
         const num = target.match(/^\d+$/) ? parseInt(target, 10) : NaN;
         if (!Number.isNaN(num) && num >= 1 && num <= n) next = list[num - 1];

@@ -7,6 +7,8 @@ import { CanvasAddon } from "@xterm/addon-canvas";
 import "@xterm/xterm/css/xterm.css";
 import { copyText } from "../lib/clipboard";
 
+let activeSelectionOwner: HTMLElement | null = null;
+
 const THEME: ITheme = {
   background: "#0d1016",
   foreground: "#d7dbe4",
@@ -47,6 +49,61 @@ export interface UseTerminalOpts {
    *   • "external" → double click → open in the real system browser
    */
   onOpenLink?: (uri: string, mode: "inApp" | "external") => void;
+}
+
+function isCopyShortcut(e: KeyboardEvent): boolean {
+  return e.type === "keydown" && (e.ctrlKey || e.metaKey) && (e.key === "c" || e.key === "C");
+}
+
+function rootContainsNode(root: HTMLElement, node: Node | null): boolean {
+  if (!node) return false;
+  return root === node || root.contains(node);
+}
+
+function elementFromNode(node: Node | null): Element | null {
+  if (!node) return null;
+  return node instanceof Element ? node : node.parentElement;
+}
+
+function domSelectionText(root: HTMLElement): string {
+  const sel = root.ownerDocument.getSelection();
+  if (!sel || sel.isCollapsed) return "";
+  if (!rootContainsNode(root, sel.anchorNode) && !rootContainsNode(root, sel.focusNode)) return "";
+  return sel.toString();
+}
+
+function terminalSelectionText(term: Terminal, root: HTMLElement): string {
+  return term.getSelection() || domSelectionText(root);
+}
+
+function eventTargetsRoot(root: HTMLElement, event: Event): boolean {
+  return rootContainsNode(root, event.target instanceof Node ? event.target : null);
+}
+
+function canOwnCopyEvent(term: Terminal, root: HTMLElement, event: Event): boolean {
+  const targetTerminal = elementFromNode(event.target instanceof Node ? event.target : null)?.closest(".xterm");
+  if (targetTerminal && !rootContainsNode(root, targetTerminal)) return false;
+  const activeTerminal = elementFromNode(root.ownerDocument.activeElement)?.closest(".xterm");
+  if (activeTerminal && !rootContainsNode(root, activeTerminal)) return false;
+  if (eventTargetsRoot(root, event)) return true;
+  if (domSelectionText(root)) return true;
+  return activeSelectionOwner === root && term.hasSelection();
+}
+
+function writeCopyEvent(e: ClipboardEvent, text: string): boolean {
+  if (!e.clipboardData) return false;
+  e.clipboardData.setData("text/plain", text);
+  e.preventDefault();
+  e.stopPropagation();
+  return true;
+}
+
+function copyTerminalSelection(term: Terminal, root: HTMLElement): boolean {
+  const text = terminalSelectionText(term, root);
+  if (!text) return false;
+  activeSelectionOwner = root;
+  void copyText(text);
+  return true;
 }
 
 export function useTerminal(opts: UseTerminalOpts) {
@@ -112,6 +169,28 @@ export function useTerminal(opts: UseTerminalOpts) {
     term.loadAddon(new WebLinksAddon(onLink));
     term.open(el);
 
+    const updateSelectionOwner = () => {
+      if (terminalSelectionText(term, el)) activeSelectionOwner = el;
+      else if (activeSelectionOwner === el) activeSelectionOwner = null;
+    };
+    const selectionSub = term.onSelectionChange(updateSelectionOwner);
+
+    const onCopy = (e: ClipboardEvent) => {
+      if (!canOwnCopyEvent(term, el, e)) return;
+      const text = terminalSelectionText(term, el);
+      if (!text) return;
+      activeSelectionOwner = el;
+      writeCopyEvent(e, text);
+    };
+    const onWindowKeyDown = (e: KeyboardEvent) => {
+      if (!isCopyShortcut(e) || !canOwnCopyEvent(term, el, e)) return;
+      if (!copyTerminalSelection(term, el)) return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    window.addEventListener("copy", onCopy, true);
+    window.addEventListener("keydown", onWindowKeyDown, true);
+
     // Ctrl/Cmd+V = paste. By default xterm ALSO emits the \x16 (SYN) control byte
     // for Ctrl+V on top of the browser's native paste. A plain shell (PSReadLine)
     // treats \x16 as "paste" so it looks fine, but TUI agents (Claude/Codex) read
@@ -127,10 +206,8 @@ export function useTerminal(opts: UseTerminalOpts) {
       // as SIGINT (\x03) so a running command can still be interrupted. Returning
       // false drops the keystroke (no \x03 emitted) — used only when we copied;
       // with no selection we return true so the shell/agent gets the interrupt.
-      if (e.type === "keydown" && (e.ctrlKey || e.metaKey) && (e.key === "c" || e.key === "C")) {
-        const sel = term.getSelection();
-        if (sel) {
-          void copyText(sel);
+      if (isCopyShortcut(e)) {
+        if (copyTerminalSelection(term, el)) {
           return false;
         }
         return true;
@@ -202,8 +279,12 @@ export function useTerminal(opts: UseTerminalOpts) {
 
     return () => {
       window.clearTimeout(linkTimer);
+      window.removeEventListener("copy", onCopy, true);
+      window.removeEventListener("keydown", onWindowKeyDown, true);
+      if (activeSelectionOwner === el) activeSelectionOwner = null;
       cancelAnimationFrame(refitRaf);
       ro.disconnect();
+      selectionSub.dispose();
       dataSub.dispose();
       resizeSub.dispose();
       scrollSub.dispose();
@@ -226,6 +307,7 @@ export function useTerminal(opts: UseTerminalOpts) {
     },
     focus: () => termRef.current?.focus(),
     scrollToBottom: () => termRef.current?.scrollToBottom(),
+    reset: () => termRef.current?.reset(),
     getTerm: () => termRef.current,
   };
 }

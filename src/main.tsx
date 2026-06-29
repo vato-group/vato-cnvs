@@ -2,6 +2,9 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import { startAutoUpdate } from "./lib/autoUpdate";
+import { initPerfMonitor } from "./lib/perf";
+
+initPerfMonitor();
 
 // NOTE: no React.StrictMode — its dev double-mount would double-spawn PTYs.
 ReactDOM.createRoot(document.getElementById("root")!).render(<App />);

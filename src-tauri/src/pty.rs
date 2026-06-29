@@ -328,7 +328,7 @@ pub fn pty_spawn(
     let id = args.id.clone();
     let app_handle = app.clone();
     std::thread::spawn(move || {
-        let mut buf = [0u8; 8192];
+        let mut buf = [0u8; 32768];
         let out_event = format!("pty://output/{id}");
         let mut total: u64 = 0;
         let mut first = true;
@@ -396,7 +396,9 @@ pub fn pty_resize(
 ) -> Result<(), String> {
     let map = state.map.lock().unwrap();
     let inst = map.get(&id).ok_or("no such terminal")?;
-    dbg_log(&format!("RESIZE id={id} -> {cols}x{rows}"));
+    if std::env::var_os("VATO_TRACE_RESIZE").is_some() {
+        dbg_log(&format!("RESIZE id={id} -> {cols}x{rows}"));
+    }
     inst.master
         .resize(PtySize {
             rows: rows.max(1),
@@ -438,12 +440,15 @@ pub fn pty_is_alive(state: State<'_, Arc<PtyState>>, id: String) -> bool {
 /// A freshly mounted xterm (workspace switch) replays this to restore its
 /// content immediately instead of waiting for the next byte of output.
 #[tauri::command]
-pub fn pty_backlog(state: State<'_, Arc<PtyState>>, id: String) -> Option<String> {
+pub fn pty_backlog(state: State<'_, Arc<PtyState>>, id: String, max_bytes: Option<usize>) -> Option<String> {
     let map = state.map.lock().unwrap();
     let bl = map.get(&id)?.backlog.lock().unwrap();
     if bl.is_empty() {
         None
     } else {
-        Some(B64.encode(&bl[..]))
+        let start = max_bytes
+            .map(|max| bl.len().saturating_sub(max))
+            .unwrap_or(0);
+        Some(B64.encode(&bl[start..]))
     }
 }

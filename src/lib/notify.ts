@@ -9,6 +9,7 @@ import {
   requestPermission,
   sendNotification,
 } from "@tauri-apps/plugin-notification";
+import { attnLog } from "./attnLog";
 
 let granted: boolean | null = null;
 
@@ -26,9 +27,14 @@ async function ensurePermission(): Promise<boolean> {
 /** Fire an OS notification (best-effort, no-op on failure). */
 export async function notify(title: string, body: string): Promise<void> {
   try {
-    if (!(await ensurePermission())) return;
+    if (!(await ensurePermission())) {
+      attnLog("notify", "blocked", { reason: "no-permission", title, body });
+      return;
+    }
+    attnLog("notify", "sent", { title, body });
     sendNotification({ title, body });
-  } catch {
+  } catch (e) {
+    attnLog("notify", "error", { title, err: String(e) });
     /* swallow — notifications must never break the caller */
   }
 }

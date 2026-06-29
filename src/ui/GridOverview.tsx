@@ -2,7 +2,7 @@ import { useStore } from "../store";
 import { CLIS } from "../data/clis";
 import type { Background, WindowItem, Workspace } from "../types";
 import { useT } from "../i18n";
-import { CloseIcon, FocusIcon, PlusIcon, TrashIcon } from "./icons";
+import { CloseIcon, EyeIcon, EyeOffIcon, FocusIcon, PlusIcon, TrashIcon } from "./icons";
 
 function cardStyle(bg: Background): React.CSSProperties {
   if (bg.kind === "color") return { background: bg.value };
@@ -46,11 +46,12 @@ function WorkspaceCard({ ws, active, focused, canDelete }: {
   const t = useT();
   const setActive = useStore((s) => s.setActive);
   const removeWorkspace = useStore((s) => s.removeWorkspace);
+  const toggleWorkspaceHidden = useStore((s) => s.toggleWorkspaceHidden);
   const terminals = ws.windows.filter((x) => x.kind === "terminal").length;
 
   return (
     <div
-      className={`vato-grid-card ${active ? "on" : ""}`}
+      className={`vato-grid-card ${active ? "on" : ""} ${ws.hidden ? "hidden" : ""}`}
       style={cardStyle(ws.background)}
       role="button"
       tabIndex={0}
@@ -65,18 +66,35 @@ function WorkspaceCard({ ws, active, focused, canDelete }: {
           <FocusIcon size={12} /> {t("grid.focusTag")}
         </span>
       )}
-      {canDelete && (
+      {ws.hidden && (
+        <span className="vato-grid-card-tag hidden" title={t("grid.hiddenActive")}>
+          <EyeOffIcon size={12} /> {t("grid.hiddenTag")}
+        </span>
+      )}
+      <div className="vato-grid-card-actions">
         <button
-          className="vato-grid-card-del"
-          title={t("grid.delete", { name: ws.name })}
+          className={`vato-grid-card-del hide ${ws.hidden ? "on" : ""}`}
+          title={ws.hidden ? t("grid.unhide", { name: ws.name }) : t("grid.hide", { name: ws.name })}
           onClick={(e) => {
             e.stopPropagation();
-            removeWorkspace(ws.id);
+            toggleWorkspaceHidden(ws.id);
           }}
         >
-          <TrashIcon size={14} />
+          {ws.hidden ? <EyeOffIcon size={14} /> : <EyeIcon size={14} />}
         </button>
-      )}
+        {canDelete && (
+          <button
+            className="vato-grid-card-del"
+            title={t("grid.delete", { name: ws.name })}
+            onClick={(e) => {
+              e.stopPropagation();
+              removeWorkspace(ws.id);
+            }}
+          >
+            <TrashIcon size={14} />
+          </button>
+        )}
+      </div>
 
       <div className="vato-grid-card-body">
         <div className="vato-grid-card-name">{ws.name}</div>

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useStore } from "../store";
+import { useStore, stepWorkspace } from "../store";
 import { bus } from "../lib/bus";
 import { revealWindow } from "../lib/reveal";
 import { gt } from "../i18n";
@@ -161,12 +161,10 @@ export function runAction(actionId: string) {
     case "voice.mic": return bus.emit("voice:toggle");
     case "workspace.next":
     case "workspace.prev": {
-      const n = s.workspaces.length;
-      if (!n) return;
-      const idx = s.workspaces.findIndex((w) => w.id === s.activeId);
-      const delta = actionId === "workspace.next" ? 1 : -1;
-      const next = s.workspaces[(idx + delta + n) % n];
-      return s.setActive(next.id);
+      // Cycle visible spaces only — hidden ones are skipped (stepWorkspace).
+      const id = stepWorkspace(s.workspaces, s.activeId, actionId === "workspace.next" ? 1 : -1);
+      if (id) s.setActive(id);
+      return;
     }
     case "window.close": {
       if (s.fullscreenId) return s.setFullscreen(null);
@@ -193,6 +191,16 @@ function isEditableTarget(): boolean {
   return false;
 }
 
+function isTerminalTarget(): boolean {
+  const el = document.activeElement as HTMLElement | null;
+  return !!el?.closest(".xterm");
+}
+
+function hasDocumentTextSelection(): boolean {
+  const sel = document.getSelection();
+  return !!sel && !sel.isCollapsed && !!sel.toString();
+}
+
 /** Global keyboard-shortcut handler driven by the persisted bindings. */
 export function useShortcuts() {
   useEffect(() => {
@@ -206,6 +214,10 @@ export function useShortcuts() {
 
       const combo = comboFromEvent(e);
       if (!combo) return;
+      // Clipboard copy is a platform convention. If a terminal or text selection
+      // owns the current focus, let that surface handle Ctrl/Cmd+C before any
+      // user-defined global binding can steal it.
+      if ((combo === "ctrl+c" || combo === "meta+c") && (isTerminalTarget() || hasDocumentTextSelection())) return;
       const shortcuts = st.settings.shortcuts;
       const actionId = Object.keys(shortcuts).find((id) => shortcuts[id] === combo);
       if (!actionId) return;

@@ -5,7 +5,7 @@ import { cliCheck } from "../pty";
 import { humanizeCombo, runAction } from "../canvas/shortcuts";
 import { useT } from "../i18n";
 import { Dropdown } from "./Dropdown";
-import { BellIcon, ChevronDownIcon, FocusIcon, FolderIcon, GridIcon, MonitorIcon, PlusIcon, SettingsIcon } from "./icons";
+import { BellIcon, ChevronDownIcon, EyeIcon, EyeOffIcon, FocusIcon, FolderIcon, GridIcon, MonitorIcon, PlusIcon, SettingsIcon } from "./icons";
 
 /** Shortcut action id for spawning a given CLI from the menu, if any. */
 const cliShortcut = (id: string): string | undefined =>
@@ -17,6 +17,7 @@ export function TopBar() {
   const activeId = useStore((s) => s.activeId);
   const active = workspaces.find((w) => w.id === activeId) ?? workspaces[0];
   const setActive = useStore((s) => s.setActive);
+  const toggleWorkspaceHidden = useStore((s) => s.toggleWorkspaceHidden);
   const openNewWorkspace = useStore((s) => s.openNewWorkspace);
   const addTerminal = useStore((s) => s.addTerminal);
   const toggleGrid = useStore((s) => s.toggleGrid);
@@ -70,18 +71,33 @@ export function TopBar() {
           <div className="vato-menu">
             <div className="vato-menu-label">{t("topbar.goTo")}</div>
             {workspaces.map((w) => (
-              <button
+              <div
                 key={w.id}
-                className={`vato-menu-item ${w.id === active.id ? "on" : ""}`}
+                className={`vato-menu-item ${w.id === active.id ? "on" : ""} ${w.hidden ? "dim" : ""}`}
+                role="button"
+                tabIndex={0}
                 onClick={() => {
                   setActive(w.id);
                   close();
                 }}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (setActive(w.id), close())}
               >
                 <FolderIcon size={15} />
                 <span className="label">{w.name}</span>
                 <span className="muted">{w.windows.length}</span>
-              </button>
+                {/* Eye toggle: hide a space from the next/prev cycle without
+                    removing it (it stays reachable here). */}
+                <button
+                  className="vato-menu-eye"
+                  title={w.hidden ? t("topbar.unhideWorkspace") : t("topbar.hideWorkspace")}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleWorkspaceHidden(w.id);
+                  }}
+                >
+                  {w.hidden ? <EyeOffIcon size={14} /> : <EyeIcon size={14} />}
+                </button>
+              </div>
             ))}
             <div className="vato-menu-sep" />
             <button

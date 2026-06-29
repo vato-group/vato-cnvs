@@ -84,6 +84,11 @@ export interface Workspace {
   cwd?: string; // default working dir for new terminals
   /** Which panes the focus-mode grid shows. Default "all" (treated as such when absent). */
   focusFilter?: FocusFilter;
+  /**
+   * Hidden from the workspace *cycle*: next/prev (shortcut + voice) skip it, but
+   * it stays listed in the switcher/overview and is still reachable explicitly.
+   */
+  hidden?: boolean;
 }
 
 /** Per-CLI launch configuration (flags chosen in Settings). */

@@ -18,8 +18,16 @@ import { bus } from "./bus";
 import { centerViewportOnWindow } from "../canvas/canvasState";
 import { moveCursor } from "../pty";
 
-/** Navigate to a window (terminal/agent/browser) wherever it lives. */
-export function revealWindow(winId: string) {
+/**
+ * Navigate to a window (terminal/agent/browser) wherever it lives.
+ *
+ * `cursor` warps the OS mouse onto the pane — right for a deliberate "jump to
+ * agent" (the hand followed the keyboard), wrong for routine creation where the
+ * mouse is already busy on a toolbar button. Callers that auto-reveal a freshly
+ * spawned window pass `{ cursor: false }`.
+ */
+export function revealWindow(winId: string, opts: { cursor?: boolean } = {}) {
+  const { cursor = true } = opts;
   const s = useStore.getState();
 
   let targetWsId: string | undefined;
@@ -60,7 +68,7 @@ export function revealWindow(winId: string) {
       const el = document.querySelector<HTMLElement>(`[data-win-id="${winId}"]`);
       if (!el) return;
       const r = el.getBoundingClientRect();
-      void moveCursor(r.left + r.width / 2, r.top + r.height / 2);
+      if (cursor) void moveCursor(r.left + r.width / 2, r.top + r.height / 2);
       // A brief highlight pulse so the eye lands where the cursor was warped.
       el.classList.add("vato-reveal-pulse");
       window.setTimeout(() => el.classList.remove("vato-reveal-pulse"), 1200);

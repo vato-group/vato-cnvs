@@ -15,9 +15,10 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import { useStore } from "../store";
 import { CLIS } from "../data/clis";
 import type { AgentStatus, CliId } from "../types";
-import { onPtyExit, onPtyOutput, ptyBacklog } from "../pty";
+import { onPtyExit, onPtyOutputSignal, ptyBacklog } from "../pty";
 import { notify } from "../lib/notify";
-import { looksWaiting, stripAnsi } from "../lib/attention";
+import { BUSY_FRESH_MS, looksBusy, looksWaiting, screenSig, stripAnsi } from "../lib/attention";
+import { attnLog, tail } from "../lib/attnLog";
 import { gt } from "../i18n";
 
 // A background agent is silent between turns; this much quiet after a burst counts
@@ -51,37 +52,74 @@ export function useAttentionWatch() {
     const offs: UnlistenFn[] = [];
     const timers = new Map<string, number>();
     const fired = new Set<string>(); // one notification per attention episode
+    const settled = new Map<string, { fingerprint: string; status: AgentStatus }>();
+    const lastOutput = new Map<string, number>(); // last PTY byte time, per pane
     const keep = (p: Promise<UnlistenFn>) =>
       void p.then((off) => (cancelled ? off() : offs.push(off)));
 
     const ping = (id: string, title: string, cli: CliId, key: "waiting" | "finished" | "error") => {
+      const focused = document.hasFocus();
+      const decision = fired.has(id) ? "skip-dup" : focused ? "skip-focus" : "fire";
+      attnLog("bg", "ping", { pane: id.slice(0, 8), title, key, notify: decision, focused });
       if (fired.has(id)) return;
       fired.add(id);
-      if (!document.hasFocus()) notify(`${title} — ${CLIS[cli].label}`, gt(`notify.${key}`));
+      if (!focused) notify(`${title} — ${CLIS[cli].label}`, gt(`notify.${key}`));
     };
 
     // Quiet after a burst: read the backlog to tell a parked prompt (waiting →
     // counts in the badge) from a plain done (settle to idle → doesn't nag).
     const settle = async (pane: { id: string; title: string; cli: CliId }) => {
-      let waiting = false;
+      let screen = "";
       try {
-        const b = await ptyBacklog(pane.id);
-        if (b) waiting = looksWaiting(stripAnsi(new TextDecoder().decode(b)));
+        const b = await ptyBacklog(pane.id, 64 * 1024);
+        if (b) screen = stripAnsi(new TextDecoder().decode(b));
       } catch {
         /* backlog read is best-effort */
       }
       if (cancelled) return;
+      const fingerprint = screenSig(screen);
+      const previous = settled.get(pane.id);
+      const sameSettled = !!previous && previous.fingerprint === fingerprint;
+      // The backlog went quiet, but a working footer (spinner / "esc to interrupt"
+      // / elapsed counter) is still on screen — the agent only PAUSED mid-turn (a
+      // sub-agent or tool call is running), it isn't done. Keep it "active", re-check
+      // after another quiet window, and DON'T ping (this was the notification spam).
+      // ...but only while output is genuinely live. Once the PTY has been silent
+      // past BUSY_FRESH_MS the footer is a frozen leftover (the agent really
+      // finished) — fall through and settle instead of holding "active" forever
+      // (the stuck "in progress, no notification" bug).
+      const silentFor = Date.now() - (lastOutput.get(pane.id) ?? 0);
+      if (looksBusy(screen) && silentFor < BUSY_FRESH_MS) {
+        if (!sameSettled) fired.delete(pane.id);
+        attnLog("bg", "busy-hold", { pane: pane.id.slice(0, 8), title: pane.title, silentMs: silentFor, tail: tail(screen) });
+        setAnyStatus(pane.id, "active");
+        window.clearTimeout(timers.get(pane.id));
+        timers.set(pane.id, window.setTimeout(() => void settle(pane), QUIET_MS));
+        return;
+      }
+      const waiting = looksWaiting(screen);
       const status: AgentStatus = waiting ? "waiting" : "idle";
+      attnLog("bg", waiting ? "waiting" : "finished", {
+        pane: pane.id.slice(0, 8),
+        title: pane.title,
+        repaint: sameSettled && previous?.status === status,
+        tail: tail(screen),
+      });
       setAnyStatus(pane.id, status);
+      if (sameSettled && previous?.status === status) return;
+      settled.set(pane.id, { fingerprint, status });
+      fired.delete(pane.id);
       ping(pane.id, pane.title, pane.cli, waiting ? "waiting" : "finished");
     };
 
     for (const pane of bg) {
       keep(
-        onPtyOutput(pane.id, () => {
-          // New output = working again; re-arm the quiet timer and allow the next
-          // settle to notify afresh.
-          fired.delete(pane.id);
+        onPtyOutputSignal(pane.id, () => {
+          lastOutput.set(pane.id, Date.now());
+          // New output re-arms the quiet timer. Do not clear `fired` here: TUI
+          // agents often repaint an unchanged idle screen, and clearing on raw
+          // output made each repaint fire another "finished" notification.
+          // `settle()` clears it only after the settled screen actually changes.
           window.clearTimeout(timers.get(pane.id));
           timers.set(pane.id, window.setTimeout(() => void settle(pane), QUIET_MS));
         }),

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { perfBytes, perfCount, perfEvent, perfMeasure, perfTime, perfTimeAsync } from "./lib/perf";
 
 // Binary-safe base64 <-> bytes (loop avoids call-stack overflow on big buffers).
 function enc(bytes: Uint8Array): string {
@@ -9,6 +10,16 @@ function enc(bytes: Uint8Array): string {
 }
 function dec(b64: string): Uint8Array {
   return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+}
+
+function raf(cb: () => void): number {
+  if (typeof requestAnimationFrame === "function") return requestAnimationFrame(cb);
+  return window.setTimeout(cb, 16);
+}
+
+function cancelRaf(id: number): void {
+  if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(id);
+  else window.clearTimeout(id);
 }
 
 export interface PtySpawnArgs {
@@ -24,12 +35,78 @@ export interface PtySpawnArgs {
 }
 
 export async function ptySpawn(a: PtySpawnArgs): Promise<void> {
-  await invoke("pty_spawn", { args: a });
+  perfEvent("spawn_request", { id: a.id.slice(0, 8), program: a.program, rows: a.rows, cols: a.cols });
+  await perfTimeAsync("pty_spawn_invoke", () => invoke("pty_spawn", { args: a }));
 }
 
-/** Subscribe to a terminal's output stream. Returns an unlisten fn. */
+function concatChunks(chunks: Uint8Array[], total: number): Uint8Array {
+  if (chunks.length === 1) return chunks[0];
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
+
+/**
+ * Subscribe to a terminal's output stream. Chunks are decoded immediately but
+ * delivered once per frame, which keeps high-volume TUI redraws from forcing one
+ * xterm write per Tauri event.
+ */
 export function onPtyOutput(id: string, onData: (bytes: Uint8Array) => void): Promise<UnlistenFn> {
-  return listen<string>(`pty://output/${id}`, (e) => onData(dec(e.payload)));
+  let chunks: Uint8Array[] = [];
+  let total = 0;
+  let frame = 0;
+  let closed = false;
+
+  const flush = () => {
+    frame = 0;
+    if (!chunks.length || closed) return;
+    const out = concatChunks(chunks, total);
+    chunks = [];
+    total = 0;
+    perfCount("pty_output_batches");
+    perfBytes("pty_output_batch", out.length);
+    onData(out);
+  };
+
+  const schedule = () => {
+    if (!frame) frame = raf(flush);
+  };
+
+  return listen<string>(`pty://output/${id}`, (e) => {
+    perfCount("pty_output_events");
+    const t0 = performance.now();
+    const bytes = dec(e.payload);
+    perfMeasure("pty_output_decode", performance.now() - t0);
+    perfBytes("pty_output_event", bytes.length);
+    chunks.push(bytes);
+    total += bytes.length;
+    if (total >= 64 * 1024) {
+      if (frame) cancelRaf(frame);
+      flush();
+    } else {
+      schedule();
+    }
+  }).then((off) => {
+    return () => {
+      closed = true;
+      if (frame) cancelRaf(frame);
+      chunks = [];
+      total = 0;
+      off();
+    };
+  });
+}
+
+/** Subscribe to output as a signal only, without base64 decoding. */
+export function onPtyOutputSignal(id: string, cb: () => void): Promise<UnlistenFn> {
+  return listen<string>(`pty://output/${id}`, () => {
+    perfCount("pty_output_signal_events");
+    cb();
+  });
 }
 
 /** Fires when the child process exits / the PTY closes. */
@@ -76,8 +153,40 @@ export async function broadcastWrite(ids: string[], data: Uint8Array): Promise<v
   await Promise.all(ids.map((id) => ptyWrite(id, data).catch(() => {})));
 }
 
-export async function ptyResize(id: string, rows: number, cols: number): Promise<void> {
-  await invoke("pty_resize", { id, rows, cols });
+const pendingResizes = new Map<string, { rows: number; cols: number; resolve: () => void; reject: (e: unknown) => void }>();
+const resizeTimers = new Map<string, number>();
+
+function flushResize(id: string): void {
+  const pending = pendingResizes.get(id);
+  if (!pending) return;
+  pendingResizes.delete(id);
+  resizeTimers.delete(id);
+  perfCount("pty_resize_invokes");
+  void perfTimeAsync("pty_resize_invoke", () => invoke("pty_resize", { id, rows: pending.rows, cols: pending.cols }))
+    .then(() => pending.resolve())
+    .catch(pending.reject);
+}
+
+export function ptyResize(id: string, rows: number, cols: number): Promise<void> {
+  perfCount("pty_resize_requests");
+  return new Promise((resolve, reject) => {
+    const prev = pendingResizes.get(id);
+    pendingResizes.set(id, {
+      rows,
+      cols,
+      resolve: () => {
+        prev?.resolve();
+        resolve();
+      },
+      reject: (e) => {
+        prev?.reject(e);
+        reject(e);
+      },
+    });
+    const oldTimer = resizeTimers.get(id);
+    if (oldTimer) window.clearTimeout(oldTimer);
+    resizeTimers.set(id, window.setTimeout(() => flushResize(id), 24));
+  });
 }
 
 export async function ptyKill(id: string): Promise<void> {
@@ -93,14 +202,31 @@ export function ptyIsAlive(id: string): Promise<boolean> {
  * mounted xterm after a workspace switch so the pane shows its previous content
  * immediately (a plain shell won't repaint on SIGWINCH like a TUI does).
  */
-export async function ptyBacklog(id: string): Promise<Uint8Array | null> {
-  const b64 = await invoke<string | null>("pty_backlog", { id });
-  return b64 ? dec(b64) : null;
+export async function ptyBacklog(id: string, maxBytes?: number): Promise<Uint8Array | null> {
+  const payload = maxBytes === undefined ? { id } : { id, maxBytes };
+  const b64 = await perfTimeAsync("pty_backlog_invoke", () =>
+    invoke<string | null>("pty_backlog", payload),
+  );
+  if (!b64) return null;
+  const bytes = perfTime("pty_backlog_decode", () => dec(b64));
+  perfBytes("pty_backlog", bytes.length);
+  return bytes;
 }
 
 /** True if a CLI program resolves on PATH. */
+const cliCheckCache = new Map<string, Promise<boolean>>();
+
 export function cliCheck(program: string): Promise<boolean> {
-  return invoke<boolean>("cli_check", { program });
+  const key = program.trim().toLowerCase();
+  const cached = cliCheckCache.get(key);
+  if (cached) {
+    perfCount("cli_check_cache_hits");
+    return cached;
+  }
+  perfCount("cli_check_cache_misses");
+  const next = perfTimeAsync("cli_check_invoke", () => invoke<boolean>("cli_check", { program }));
+  cliCheckCache.set(key, next);
+  return next;
 }
 
 export function homeDir(): Promise<string | null> {
